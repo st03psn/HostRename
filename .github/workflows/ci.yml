@@ -12,6 +12,9 @@ jobs:
   checks:
     name: Checks (${{ matrix.shell }})
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
     strategy:
       fail-fast: false
       matrix:
@@ -21,7 +24,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Pester and PSScriptAnalyzer
-        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
@@ -29,7 +31,6 @@ jobs:
           Install-Module -Name PSScriptAnalyzer -SkipPublisherCheck -Force -Scope CurrentUser
 
       - name: Parse check (*.ps1)
-        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
           $failed = @()
@@ -47,7 +48,6 @@ jobs:
           Write-Host 'All *.ps1 files parse without errors.'
 
       - name: Encoding and line-ending check (*.ps1, *.psd1)
-        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
           $problems = @()
@@ -68,7 +68,6 @@ jobs:
           Write-Host 'All *.ps1 and *.psd1 files have a UTF-8 BOM and LF line endings.'
 
       - name: PSScriptAnalyzer (errors only)
-        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
           Import-Module PSScriptAnalyzer
@@ -80,7 +79,6 @@ jobs:
           Write-Host 'PSScriptAnalyzer: no errors.'
 
       - name: Pester (tests that do not need Active Directory)
-        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
           # Windows PowerShell 5.1 loads the built-in Pester 3 by default; force the 5.x module.

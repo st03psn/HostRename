@@ -32,6 +32,7 @@ body:
       label: Script / Skript
       options:
         - Invoke-HostRename.ps1
+        - Invoke-AcmpHostRename.ps1
         - Prepare-HostRename.ps1
         - Test-DeploymentNetwork.ps1
         - Update-ComputerCertificate.ps1

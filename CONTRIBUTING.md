@@ -8,7 +8,7 @@ Thanks for your interest in HostRename!
 
 ### Project facts
 
-- All scripts and Pester test files are in the **repository root** (`Invoke-HostRename.ps1`, `Prepare-HostRename.ps1`, `Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1`, `HostRename.*.Tests.ps1`); `tools/` holds helper scripts.
+- All scripts and Pester test files are in the **repository root** (`Invoke-HostRename.ps1`, `Invoke-AcmpHostRename.ps1`, `Prepare-HostRename.ps1`, `Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1`, `HostRename.*.Tests.ps1`); `tools/` holds helper scripts.
 - Target: **Windows PowerShell 5.1**. PowerShell 7 works in addition, but code must run on 5.1.
 - Files: `.ps1` and `.psd1` are **UTF-8 with BOM** and use **LF** line endings (see `.gitattributes`). CI rejects files without BOM and files with CRLF. Do not let your editor convert line endings.
 - Deployment methods: **GPO** or **ACMP** (alternatives, never both active on the same device).
@@ -77,7 +77,7 @@ Danke für dein Interesse an HostRename!
 
 ### Projektfakten
 
-- Alle Skripte und Pester-Testdateien liegen im **Wurzelverzeichnis des Repositorys** (`Invoke-HostRename.ps1`, `Prepare-HostRename.ps1`, `Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1`, `HostRename.*.Tests.ps1`); im Ordner `tools/` liegen Hilfsskripte.
+- Alle Skripte und Pester-Testdateien liegen im **Wurzelverzeichnis des Repositorys** (`Invoke-HostRename.ps1`, `Invoke-AcmpHostRename.ps1`, `Prepare-HostRename.ps1`, `Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1`, `HostRename.*.Tests.ps1`); im Ordner `tools/` liegen Hilfsskripte.
 - Zielumgebung: **Windows PowerShell 5.1**. PowerShell 7 funktioniert zusätzlich, der Code muss aber unter 5.1 laufen.
 - Dateien: `.ps1` und `.psd1` sind **UTF-8 mit BOM** und verwenden **LF**-Zeilenenden (siehe `.gitattributes`). Die CI lehnt Dateien ohne BOM und Dateien mit CRLF ab. Der Editor darf die Zeilenenden nicht umwandeln.
 - Verteilungsmethoden: **GPO** oder **ACMP** (Alternativen, niemals beide auf demselben Gerät aktiv).

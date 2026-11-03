@@ -8,6 +8,50 @@ Stand: 3. November 2026 · Version 1.2.0
 
 GPO und ACMP sind **alternative** Verteilwege. Niemals beide auf demselben Gerät: Die HostRename-GPO nicht mit Geräten verknüpfen, die den Client-Command erhalten.
 
+## Empfohlen: der Wrapper `Invoke-AcmpHostRename.ps1`
+
+`Invoke-AcmpHostRename.ps1` setzt den ganzen Ablauf aus Abschnitt 4 (Zustand prüfen, Gate, Umbenennen, Zertifikat, Cleanup) in **einem Skriptlauf je ACMP-Aufruf** um. Er ruft `Invoke-HostRename.ps1`, `Test-DeploymentNetwork.ps1` und `Update-ComputerCertificate.ps1` unverändert aus seinem eigenen Ordner im selben PowerShell-Prozess auf, reicht ihre Ausgabe durch und endet mit einer Zusammenfassungszeile und einem Exit-Code. Der Client-Command braucht dann keine Zustandsprüfung, keine Schrittfolge und keine Auswertung von Zwischen-Exit-Codes. Wie alles in 1.2.0 ist der Wrapper nur in der Simulation (`HostRename.Simulation.Tests.ps1`) gelaufen, noch nicht in ACMP.
+
+**Was der Client-Command enthält** (Menünamen in ACMP: in ACMP prüfen):
+
+1. Die vier Skripte in einen Ordner auf dem Client übertragen: `Invoke-AcmpHostRename.ps1`, `Invoke-HostRename.ps1`, `Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1` (das letzte wird nur mit `-CertificateTemplate` genutzt; es immer mitzuübertragen schadet nicht).
+2. Den Wrapper als SYSTEM in der **64-Bit**-Windows-PowerShell ausführen (Befehlszeilen unten).
+3. Bedingung auf den Exit-Code: **3010** → Neustart-Dialog, Neustart durch ACMP; **20** → Dialog „LAN-Kabel anschließen“; **jeder andere Code** → Ende. Der nächste geplante Lauf macht dort weiter, wo das Gerät steht.
+
+Jeder Lauf liest den Zustand neu aus der Registry. Derselbe Client-Command wird deshalb einfach wiederholt (bei Agent-Start, Anmeldung oder täglich), bis das Gerät fertig ist; auf einem fertigen Gerät endet der Wrapper sofort mit Exit-Code 0.
+
+```powershell
+# LAN-/DirectAccess-Geräte (ohne Zertifikatsschritt)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-AcmpHostRename.ps1 -NameTemplate "DE{Serial}" -NoCentralLog -CorporateSsid "CORP-WLAN"
+# WLAN-Geräte: nach dem Neustart das WLAN-Computerzertifikat erneuern, dann Cleanup
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-AcmpHostRename.ps1 -NameTemplate "DE{Serial}" -NoCentralLog -CorporateSsid "CORP-WLAN" -CertificateTemplate "<TemplateName>" -RemoveOldCertificates
+# mit zentralem Log: -CentralLogPath "\\<Server>\HostRename$\log\rename-log.csv" statt -NoCentralLog
+# Probelauf (Client-Command „HostRename – Probelauf“): dieselbe Zeile plus -WhatIf
+# 32-Bit-ACMP-Agent auf 64-Bit-Windows: dieselben Zeilen mit der 64-Bit-PowerShell
+%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-AcmpHostRename.ps1 -NameTemplate "DE{Serial}" -NoCentralLog -CorporateSsid "CORP-WLAN"
+```
+
+Parameter: Die Namensparameter von `Invoke-HostRename.ps1` (`-NameTemplate`, `-Prefix`, `-Suffix`, `-OnTooLong`, `-OnSerialProblem`, `-FutureIdLength`) und die Gate-Parameter (`-Allow`, `-CorporateSsid`, `-DomainName`) werden unverändert durchgereicht (Abschnitt 3). **Genau einer** von `-NoCentralLog` oder `-CentralLogPath <UNC-Pfad>` ist Pflicht; sonst endet der Wrapper mit Exit-Code 1, damit der Platzhalter-Standardwert von `Invoke-HostRename.ps1` nicht versehentlich genutzt wird. Mit `-CorporateSsid` erkennt das Gate das Firmen-WLAN, sodass ein Gerät nur im WLAN Exit-Code 20 (Kabel-Dialog) bekommt. `-CertificateTemplate` (Vorlagenname, nicht Anzeigename) fügt nach dem Neustart den Zertifikatsschritt hinzu; `-RemoveOldCertificates` reicht `-RemoveOld` durch. `-WhatIf` führt nur das Gate und `Invoke-HostRename.ps1 -WhatIf` aus (kein Zertifikat, kein Cleanup) und schreibt nichts; im Probelauf-Client-Command keine Dialoge zeigen. Details: `Get-Help .\Invoke-AcmpHostRename.ps1 -Full`.
+
+**Exit-Codes des Wrappers**
+
+| Exit-Code | `PHASE` in der Zusammenfassungszeile | Bedeutung | Reaktion im Client-Command |
+| --- | --- | --- | --- |
+| 0 | `Done`, `Cleanup`, `DryRun` | fertig oder in diesem Lauf nichts mehr zu tun (`Cleanup`: Cleanup aufgeschoben, der nächste Lauf schließt es ab) | Ende |
+| 3010 | `RebootRequired` | umbenannt oder Umbenennung ausstehend, Neustart nötig | Neustart-Dialog, Neustart durch ACMP |
+| 20 | `Gate` | nur Firmen-WLAN | Dialog „LAN-Kabel anschließen“, Ende |
+| 21, 22 | `Gate` | keine Domänenverbindung / Weg nicht erlaubt oder unbekannt | still beenden, später erneut |
+| 1 | `Error`, `Gate`, `Rename`, `Certificate`, `Cleanup` | Fehler (auch `PLATFORM`, fehlender Parameter oder fehlendes Skript, Zertifikat nicht erneuert) | Ende, später erneut; nach mehreren Fehlschlägen die Ausgabe prüfen |
+| 2, 4, 5 | `Permanent` | Name zu lang / keine Berechtigung (Delegation) / keine brauchbare Seriennummer | Ende; manuell eingreifen, dann freigeben (Abschnitt 4, Schritt 1) |
+
+Die letzte Zeile der Ausgabe ist immer die Zusammenfassungszeile, zum Beispiel:
+
+```text
+HOSTRENAME PHASE=RebootRequired EXIT=3010 STEP=Rename MESSAGE="Renamed or rename pending: reboot required."
+```
+
+`STEP` nennt den Schritt, der entschieden hat (`Platform`, `Parameters`, `StateCheck`, `Gate`, `Rename`, `Certificate`, `Cleanup`). Vor jedem aufgerufenen Skript gibt der Wrapper `HOSTRENAME STEP=<Schritt> RUN=<Skript>` aus, danach folgt die eigene Ausgabe dieses Skripts (Gate-Zeile `RESULT=...`, Ereignisse von `Invoke-HostRename.ps1`, Zertifikatszeile `RESULT=...`). Ein Gerät mit dauerhaftem Fehler (2, 4, 5) endet bei jedem Lauf schon an der Zustandsprüfung mit demselben Code, bis `LastExitCode` entfernt ist (Abschnitt 4, Schritt 1). Berichte (Abschnitt 6) und der Status-Client-Command ([acmp-rollout.md](acmp-rollout.md), Abschnitt 4.3) bleiben, wie sie sind.
+
 ## 1. Voraussetzungen
 
 - **Delegation** bleibt nötig: Auch unter ACMP benennt sich das Gerät mit seinem eigenen Computerkonto (SYSTEM) um. Einmalig auf einem Admin-PC oder DC als Domänenadmin in einer erhöhten PowerShell setzen:
@@ -31,6 +75,7 @@ Diese Dateien ins Dateirepository von ACMP legen (in ACMP prüfen: wo und wie Da
 
 | Datei | Gebraucht für |
 | --- | --- |
+| `Invoke-AcmpHostRename.ps1` | Wrapper: der ganze Ablauf in einem Lauf (empfohlen) |
 | `Invoke-HostRename.ps1` | Umbenennung, Cleanup |
 | `Test-DeploymentNetwork.ps1` | Netzwerk-Gate |
 | `Update-ComputerCertificate.ps1` | Zertifikatserneuerung (nur wenn WLAN-Geräte betroffen sind) |
@@ -105,7 +150,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Update-ComputerCertifi
 
 Die letzte stdout-Zeile ist eine Zusammenfassung: `RESULT=RENEWED|NOT_NEEDED|WHATIF|ERROR EXIT=... TEMPLATE=... DNS=...`. Solange eine Umbenennung noch auf den Neustart wartet, endet das Skript mit Exit-Code 1.
 
-## 4. Ablauf des Client-Commands
+## 4. Alternative: einzelne Schritte (Ablauf des Client-Commands)
+
+Diesen Ablauf setzt der Wrapper um. Nur aus einzelnen Schritten aufbauen, wenn der Wrapper nicht genutzt werden kann.
 
 ```text
 1  Zustand prüfen     fertig?          -> Ende
@@ -234,7 +281,7 @@ Weitere Quelle: der Marker `HKLM\SOFTWARE\HostRename` (`Completed`, `ComputerNam
 ## 7. Checkliste für Aufbau und Rollout
 
 1. Delegation setzen; keine GPO-Verknüpfung für diese Geräte.
-2. Dateirepository füllen (3 Skripte).
-3. Client-Command nach Abschnitt 4 bauen, zuerst mit `-WhatIf` und `-NoCentralLog` (64-Bit-PowerShell, siehe Abschnitt 1).
+2. Dateirepository füllen (4 Skripte, einschließlich Wrapper).
+3. Client-Command mit dem Wrapper bauen (Abschnitt „Empfohlen: der Wrapper“; alternativ nach Abschnitt 4), zuerst mit `-WhatIf` und `-NoCentralLog` (64-Bit-PowerShell, siehe Abschnitt 1).
 4. Gerätetests ([testplan.md](testplan.md), T3) durchführen, Ablauf, Texte und Neustart-Frist anpassen.
 5. Probelauf auf allen Geräten (T4), dann Wellen (T5).

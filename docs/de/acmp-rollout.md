@@ -33,10 +33,10 @@ Drei Client-Commands verwenden, damit Bestandsaufnahme, Probelauf und echter Lau
 | Client-Command | Zweck | Ändert das Gerät | Inhalt |
 | --- | --- | --- | --- |
 | **HostRename – Status** | Zustand in Custom Fields sammeln | nein | Skript nur lesend (Abschnitt 4.2), läuft auf allen Geräten im Geltungsbereich, auch nach dem Abschluss |
-| **HostRename – Probelauf** | Phase 3 | nein | Gate + `Invoke-HostRename.ps1 -Deployment Acmp ... -WhatIf` |
-| **HostRename – Umbenennen** | Phasen 4–5 | ja | vollständiger Ablauf aus [acmp-anleitung.md](acmp-anleitung.md), Abschnitt 4: Zustandsprüfung, Gate, Umbenennen, Neustart-Dialog, Gate nach dem Neustart, Zertifikat, Cleanup |
+| **HostRename – Probelauf** | Phase 3 | nein | `Invoke-AcmpHostRename.ps1 ... -WhatIf` (Gate + `Invoke-HostRename.ps1 -WhatIf`, schreibt nichts); keine Dialoge |
+| **HostRename – Umbenennen** | Phasen 4–5 | ja | `Invoke-AcmpHostRename.ps1 ...`: Der Wrapper führt den vollständigen Ablauf aus [acmp-anleitung.md](acmp-anleitung.md), Abschnitt 4 (Zustandsprüfung, Gate, Umbenennen, Gate nach dem Neustart, Zertifikat, Cleanup) in einem Lauf aus; der Client-Command zeigt bei Exit-Code 3010 den Neustart-Dialog und bei 20 den Dialog „LAN-Kabel“ (siehe [acmp-anleitung.md](acmp-anleitung.md), „Empfohlen: der Wrapper“) |
 
-Alle drei verwenden **dieselben Parameter** (Vorlage, `-NoCentralLog` oder `-CentralLogPath`, `-CorporateSsid`). Eine andere Vorlage löst eine erneute Umbenennung aus.
+Probelauf und Umbenennen rufen den Wrapper mit **denselben Parametern** auf (Vorlage, `-NoCentralLog` oder `-CentralLogPath`, `-CorporateSsid`, für WLAN-Geräte `-CertificateTemplate`); der Probelauf ergänzt nur `-WhatIf`. Eine andere Vorlage löst eine erneute Umbenennung aus.
 
 Die Client-Commands versionieren, zum Beispiel indem die Skriptversion in Name oder Beschreibung steht. Einen Client-Command nur zwischen den Wellen ändern.
 
@@ -86,7 +86,7 @@ Statische Container steuern, **wer** den Client-Command erhält. Dynamische Cont
 ### Phase 0: vorbereiten
 
 1. Die Delegation setzen (siehe [acmp-anleitung.md](acmp-anleitung.md), Abschnitt 1). Für ein zentrales Log zusätzlich die Freigabe anlegen.
-2. `Invoke-HostRename.ps1`, `Test-DeploymentNetwork.ps1` und, für WLAN-Geräte, `Update-ComputerCertificate.ps1` unverändert in das ACMP-Dateirepository legen.
+2. `Invoke-AcmpHostRename.ps1`, `Invoke-HostRename.ps1`, `Test-DeploymentNetwork.ps1` und `Update-ComputerCertificate.ps1` (nur mit `-CertificateTemplate` genutzt) unverändert in das ACMP-Dateirepository legen.
 3. Die Custom Fields (Abschnitt 2.2) und die Container (Abschnitt 2.3) definieren.
 4. Die Parameter festlegen: Vorlage, zentrales Log ja oder nein, Firmen-SSID, Name der Zertifikatsvorlage. In allen Client-Commands identisch verwenden.
 5. Sicherstellen, dass die HostRename-GPO nicht mit diesen OUs verknüpft ist.
@@ -152,7 +152,7 @@ Von oben nach unten prüfen. Ein Lauf ist nur dann in Ordnung, wenn alle zutreff
 | nach dem Neustart | 3010 oder 0 | neu | – | neu | Gate 0 | Zertifikat (WLAN-Geräte), Cleanup |
 | fertig | 0 | neu (leer, wenn der Name schon zur Vorlage passte) | vorhanden (`ComputerName` = neu) | neu | Schritt 1 beendet den Lauf | keiner |
 | Wiederholung | 1 | evtl. | – | evtl. | Fehler im Job | automatisch beim nächsten Lauf; nach mehreren Fehlschlägen das Log prüfen |
-| dauerhaft | 2, 4 oder 5 | – | – | alt | Client-Command endet bei jedem Lauf in Schritt 1 (`phase=permanent`) | manuelles Eingreifen: Ursache beheben, dann das Gerät durch Löschen von `LastExitCode` freigeben (siehe [acmp-anleitung.md](acmp-anleitung.md), Abschnitt 4) |
+| dauerhaft | 2, 4 oder 5 | – | – | alt | Client-Command endet bei jedem Lauf in Schritt 1 (Wrapper: Exit 2, 4 oder 5 mit `PHASE=Permanent STEP=StateCheck`; einzelne Schritte: `phase=permanent`) | manuelles Eingreifen: Ursache beheben, dann das Gerät durch Löschen von `LastExitCode` freigeben (siehe [acmp-anleitung.md](acmp-anleitung.md), Abschnitt 4) |
 
 ### 4.3 Statusskript für den Client-Command „HostRename – Status“
 
@@ -209,7 +209,7 @@ Die Spalte „Ergebnis“ ausfüllen (OK oder Abweichung mit kurzer Notiz). Die 
 
 | ID | Test | Schritte in ACMP | Erwartetes Ergebnis | Prüfung | Ergebnis |
 | --- | --- | --- | --- | --- | --- |
-| AC-A1 | Dateiübertragung | Client-Command kopiert die drei Skripte aus dem Dateirepository und führt `Get-FileHash` darauf aus | Dateien vorhanden, Hashes identisch mit dem Repository, BOM intakt | L1 | |
+| AC-A1 | Dateiübertragung | Client-Command kopiert die vier Skripte aus dem Dateirepository und führt `Get-FileHash` darauf aus | Dateien vorhanden, Hashes identisch mit dem Repository, BOM intakt | L1 | |
 | AC-A2 | 64-Bit | Skriptschritt `[Environment]::Is64BitProcess` | `True`; bei `False` `%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe` verwenden und wiederholen | L1 | |
 | AC-A3 | Exit-Codes | Skriptschritte mit `exit 0`, `1`, `5`, `20`, `3010` | jeder Code kommt unverändert an und ist in einer Bedingung nutzbar; notieren, wie 3010 behandelt wird (Testplan A1, A2) | L1 | |
 | AC-A4 | Ausgabe | `Test-DeploymentNetwork.ps1` ausführen | die Zusammenfassungszeile ist im Jobverlauf sichtbar | L1 | |
@@ -236,8 +236,8 @@ Die Spalte „Ergebnis“ ausfüllen (OK oder Abweichung mit kurzer Notiz). Die 
 
 | ID | Situation | So erzeugen | Erwartetes Ergebnis | Prüfung | Ergebnis |
 | --- | --- | --- | --- | --- | --- |
-| AC-C1 | Keine Berechtigung | Testgerät in einer OU ohne Delegation | Exit 4 (`PERM_DENIED`), keine Umbenennung, Container `HR-Permanent`; Wiederholungen enden in Schritt 1 mit `phase=permanent` (kein Gate, kein Skript); nach Behebung der Delegation und Löschen von `LastExitCode` läuft der nächste Lauf weiter und benennt um | L1–L3 | |
-| AC-C2 | Name zu lang | zu lange Testvorlage mit `-OnTooLong Skip` | Exit 2, keine Umbenennung, `HR-Permanent`; Wiederholungen enden in Schritt 1 mit `phase=permanent`; nach der Freigabe (`LastExitCode` gelöscht) läuft der Lauf wieder weiter | L1–L3 | |
+| AC-C1 | Keine Berechtigung | Testgerät in einer OU ohne Delegation | Exit 4 (`PERM_DENIED`), keine Umbenennung, Container `HR-Permanent`; Wiederholungen enden in Schritt 1 (Wrapper: Exit 4, `PHASE=Permanent STEP=StateCheck`; einzelne Schritte: `phase=permanent`), kein Gate, kein Skript; nach Behebung der Delegation und Löschen von `LastExitCode` läuft der nächste Lauf weiter und benennt um | L1–L3 | |
+| AC-C2 | Name zu lang | zu lange Testvorlage mit `-OnTooLong Skip` | Exit 2, keine Umbenennung, `HR-Permanent`; Wiederholungen enden in Schritt 1 (Wrapper: Exit 2, `PHASE=Permanent STEP=StateCheck`; einzelne Schritte: `phase=permanent`); nach der Freigabe (`LastExitCode` gelöscht) läuft der Lauf wieder weiter | L1–L3 | |
 | AC-C3 | Neustart verschoben | den Neustart-Dialog bis zur Frist verschieben | Neustart spätestens zur Frist; bis dahin liefern erneute Läufe 3010 (`PENDING_REBOOT`) | L1, L3 | |
 | AC-C4 | Kabel vor dem Neustart gezogen | nach 3010 das Kabel ziehen, WLAN verwenden | notieren: funktioniert WLAN bis zum Neustart noch (Testplan W1)? Nach dem Neustart wartet das Gerät an Gate 20, bis ein Kabel angeschlossen ist | L1, L3, L6 | |
 | AC-C5 | Gerät nach der Umbenennung offline | nach 3010 das Gerät einen Tag offline nehmen | der nächste Lauf macht mit der Phase nach dem Neustart weiter; nichts wird zweimal umbenannt | L1–L3 | |

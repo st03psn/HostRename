@@ -1,6 +1,8 @@
 # Umsetzungsplan: HostRename über ACMP verteilen
 
-Stand: 3. November 2026 · Status: **Entwurf, nicht umgesetzt** (Grundlage für die Weiterarbeit)
+Stand: 3. November 2026 · Status: Entscheidungen getroffen, Umsetzung läuft (Version 1.2.0)
+
+[English version](../acmp-deployment-plan.md)
 
 ## Ausgangslage
 
@@ -55,7 +57,7 @@ Das Gate gehört nicht in das Client-Skript, sondern bleibt eigenständig: So l�
 Die Logik bleibt, ebenso die Exit-Codes (0, 3010, 1, 2, 4, 5). Anzupassen:
 - Bei `-Cleanup` darf das Skript seine eigene Datei nicht löschen, wenn es nicht aus `$LocalFolder` läuft (unter ACMP liegt es in dessen Ablage). Vorschlag: Schalter `-KeepScript` oder Erkennung über den Pfad. Den Task entfernt die Bereinigung ohnehin nur, wenn er existiert.
 - Kein `-Reboot`: Den Neustart steuert ACMP.
-- Lokale Logs über `-LocalDir` an einen festen Ort (Standard `<Program Files>\HostRename` beibehalten oder `C:\ProgramData\HostRename`, Entscheidung offen).
+- Lokale Logs über `-LocalDir` an einen festen Ort (im ACMP-Modus `C:\ProgramData\HostRename`).
 - Zentrales CSV-Log optional beibehalten (über DA erreichbar?), Rückmeldung zusätzlich über ACMP (siehe 5).
 
 ### 3. Zertifikatserneuerung (`Update-ComputerCertificate.ps1`, neu, wiederverwendbar)
@@ -100,7 +102,7 @@ Exit-Codes der Skripte bleiben unter 100, weil ACMP eigene Codes ab 100 und ab 1
 
 ## Vorgehen
 
-### Phase 0: Klärung an Testgeräten (vor jeder Umsetzung)
+### Phase 0: Klärung an Testgeräten (keine Voraussetzung; Teil der Testphasen, siehe `docs/roadmap.md`)
 
 1. **WLAN:** Testgerät per Kabel umbenennen, neu starten, dann nur WLAN: Verbindet es sich? Danach neues Zertifikat anfordern: verbindet es sich dann? Vorlagenname für das WLAN-Zertifikat festhalten.
 2. **Vor dem Neustart:** Testgerät per Kabel umbenennen, Kabel ziehen, WLAN neu verbinden lassen: Bricht die Anmeldung schon ab?
@@ -136,11 +138,12 @@ Alle Geräte fertig: Client Command deaktivieren, Delegation entfernen (`-Action
 
 Der Rahmen besteht aus vier austauschbaren Teilen: Gate mit erlaubten Wegen, eigentliche Aktion, Exit-Code-Vertrag (0 fertig, 3010 Neustart, 1 später erneut, 2–9 dauerhaftes Problem, 20–29 Netzwerk) und Neustart-Dialog mit Frist. Für eine andere Software wird nur die Aktion getauscht; Gate und Dialoge bleiben. Den Vertrag als ACMP-Vorlage anlegen, damit jeder neue Client Command dieselbe Auswertung nutzt.
 
-## Offene Entscheidungen
+## Entscheidungen
 
-- Welche Wege dürfen umbenennen: nur Kabel oder Kabel und DA?
-- Neustart: wie lange verschiebbar, ab wann erzwungen?
-- Zertifikatsvorlage für das WLAN und ob alte Zertifikate entfernt werden dürfen.
-- Zentrales CSV-Log beibehalten oder nur ACMP-Bericht?
-- Ablage der lokalen Logs (`Program Files` oder `ProgramData`).
-- GPO-Weg als Rückfallebene behalten oder entfernen?
+- **Erlaubte Wege zum Umbenennen:** LAN-Kabel und DirectAccess (Vorgabe des Netzwerk-Gates, konfigurierbar).
+- **Neustart-Frist:** noch offen, wird in der Testphase festgelegt (ACMP-Seite).
+- **Zertifikatsvorlage für das WLAN:** noch unbekannt, daher Pflichtparameter; alte Zertifikate werden nur mit dem Schalter `-RemoveOld` entfernt.
+- **Zentrales CSV-Log:** bleibt als Option zusätzlich zur ACMP-Rückmeldung.
+- **Lokale Logs im ACMP-Modus:** `C:\ProgramData\HostRename`.
+- **GPO-Weg:** bleibt erhalten; GPO und ACMP sind alternative Verteilwege und nie gleichzeitig auf demselben Gerät aktiv.
+- **Phase 0 ist keine Voraussetzung mehr:** Der Nutzer kann sie nicht vorab einplanen; Geräteprüfungen sind Teil der Testphasen in `docs/roadmap.md`.

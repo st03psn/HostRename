@@ -1,81 +1,79 @@
-# HostRename – Übergabe an Claude Code
+# HostRename – Handover to Claude Code
 
-Diese Datei fasst zusammen, was für die Weiterarbeit nötig ist: Ziel, Entscheidungen samt Begründung, Fallstricke, Prüfstand und offene Punkte. Die Betriebsdokumentation steht in `README.md`, die Parameter in der eingebauten Hilfe der Skripte (`Get-Help .\Prepare-HostRename.ps1 -Full`).
+This file summarizes what is needed to continue the work: goal, decisions with rationale, pitfalls, test status and open points. The operations documentation is in `README.md` (German: `README.de.md`); the parameters are in the scripts' built-in help (`Get-Help .\Prepare-HostRename.ps1 -Full`).
 
-## Worum es geht
+## What this is about
 
-HostRename benennt domänengebundene Windows-Clients (AD, im Pilot mit deutscher Systemsprache) per GPO automatisch um, nach einer Namensvorlage (`{Name}`, `{Serial}`, Prefix, Suffix, Zukunfts-ID bei unbrauchbarer oder doppelter Seriennummer). Das Client-Skript läuft als Scheduled Task unter SYSTEM, benennt lokal und das AD-Computerobjekt um (`Rename-Computer`), schreibt ein zentrales CSV-Log auf einen Share und räumt sich nach Erfolg selbst weg. Es gibt kein Passwort: Die Rechte kommen per Delegation an SELF auf den Client-OUs.
+HostRename automatically renames domain-joined Windows clients (AD, German system language in the pilot) by GPO, using a name template (`{Name}`, `{Serial}`, prefix, suffix, future ID for an unusable or duplicate serial number). The client script runs as a scheduled task under SYSTEM, renames locally and the AD computer object (`Rename-Computer`), writes a central CSV log to a share and removes itself after success. There is no password: the permissions come from a delegation to SELF on the client OUs.
 
-Stand: **Version 1.1.9** (30. Oktober 2026). Zielumgebung ist die **Windows PowerShell 5.1**; PowerShell 7 funktioniert zusätzlich.
+Status: **version 1.1.9** (30 October 2026). The target environment is **Windows PowerShell 5.1**; PowerShell 7 works in addition.
 
-## Nächstes Vorhaben: Verteilung über ACMP
+## Next project: ACMP as an alternative deployment method
 
-Der Nutzer möchte die Umbenennung künftig über das Deployment-Tool ACMP verteilen statt per GPO (rund 700 Clients, meist Notebooks, DirectAccess und EAP-TLS-WLAN). Der Plan steht in `docs/ACMP-Umsetzungsplan.md` und ist **ein Entwurf**: Zuerst Phase 0 (Klärung an Testgeräten) mit dem Nutzer abschließen und die offenen Entscheidungen einholen, erst danach Code ändern. Neue Skripte (Netzwerk-Gate, Zertifikatserneuerung) als eigenständige, wiederverwendbare Bausteine anlegen.
+Next to GPO, HostRename is to be deployable through the deployment tool ACMP (about 700 clients, mostly notebooks, DirectAccess and EAP-TLS WLAN). GPO and ACMP are alternative deployment methods; never both active on the same device. The plan is in `docs/acmp-deployment-plan.md` (German: `docs/de/ACMP-Umsetzungsplan.md`), the schedule and test phases in `docs/roadmap.md`. The decisions are taken (see the plan, section "Decisions"); implementation is in progress (version 1.2.0). Create new scripts (network gate, certificate renewal) as standalone, reusable building blocks.
 
 ## Repo
 
-Alles liegt bewusst im Wurzelverzeichnis: Skripte und Tests finden einander über `$PSScriptRoot`, und `Prepare-HostRename.ps1` schreibt `HostRename.Checks.psd1` daneben. Nicht in Unterordner verschieben, ohne Code und README mitzuziehen.
+Everything deliberately sits in the root directory: scripts and tests find each other through `$PSScriptRoot`, and `Prepare-HostRename.ps1` writes `HostRename.Checks.psd1` next to them. Do not move into subfolders without updating code and README.
 
-- `Prepare-HostRename.ps1`: Setup/Rückbau von Share, Delegation, GPO, optional Bereinigungs-GPO. Konfiguration über Variablen im Block „HIER ANPASSEN“ (keine Konfigurationsdatei).
-- `Invoke-HostRename.ps1`: Client-Skript. Exit-Codes: 0 nichts zu tun/-WhatIf, 3010 umbenannt (Neustart nötig), 1 Fehler, 2 Name zu lang (Skip), 4 keine Berechtigung, 5 keine verwendbare Seriennummer.
-- `HostRename.Dc.Tests.ps1`, `.Client.Tests.ps1`, `.Local.Tests.ps1`: Pester 5.3+. Dc und Client lesen `HostRename.Checks.psd1`, die das Setup aus den Variablen schreibt (in `.gitignore`, nie committen). `HostRename.Checks.beispiel.psd1` zeigt den Aufbau.
-- `tools/Test-GpoReport.ps1`: Diagnose für den GPMC-Bericht (siehe Fallstricke). Eigenständig, nicht Teil des Release-Pakets.
-- `.gitattributes`: LF in allen Textdateien. Die `.ps1`/`.psd1` sind **UTF-8 mit BOM** (ohne BOM liest Windows PowerShell 5.1 sie als ANSI). Neue PowerShell-Dateien genauso anlegen.
+- `Prepare-HostRename.ps1`: setup/removal of share, delegation, GPO, optional cleanup GPO. Configuration through variables in the block "HIER ANPASSEN" (no configuration file).
+- `Invoke-HostRename.ps1`: client script. Exit codes: 0 nothing to do/-WhatIf, 3010 renamed (reboot required), 1 error, 2 name too long (skip), 4 no permission, 5 no usable serial number.
+- `HostRename.Dc.Tests.ps1`, `.Client.Tests.ps1`, `.Local.Tests.ps1`: Pester 5.3+. Dc and Client read `HostRename.Checks.psd1`, which setup writes from the variables (in `.gitignore`, never commit). `HostRename.Checks.beispiel.psd1` shows the structure.
+- `tools/Test-GpoReport.ps1`: diagnostics for the GPMC report (see pitfalls). Standalone, not part of the release package.
+- `.gitattributes`: LF in all text files. The `.ps1`/`.psd1` files are **UTF-8 with BOM** (without BOM, Windows PowerShell 5.1 reads them as ANSI). Create new PowerShell files the same way.
+- `LICENSE` (MIT), `SECURITY.md`, issue and PR templates and a CI workflow exist; the CI workflow is yet to be adapted.
+- `docs/`: `acmp-deployment-plan.md`, `roadmap.md`; German versions in `docs/de/` and `README.de.md`.
 
-## Arbeitsregeln des Nutzers (verbindlich)
+## Owner's working rules (binding)
 
-- Antworten, Kommentare und Hilfetexte auf **Deutsch**.
-- **Nichts ohne Auftrag einbauen.** Vor optionalen Änderungen fragen. Beispiele aus dem bisherigen Verlauf: Eine Admin-Gruppe wurde auf Wunsch wieder entfernt, eine Konfigurationsdatei für die Prepare-Variablen wurde angeboten und nicht gewünscht, der Text der Neustart-Meldung „passt so“.
-- **Ehrlich über Nicht-Getestetes.** Nichts als bestätigt darstellen, was nicht auf Windows/AD gelaufen ist. Der bisherige Entwicklungsstand wurde in einer Linux-Sandbox mit Mocks geprüft (PowerShell 7, kein Pester, kein AD); die Mocks sind nicht Teil des Repos.
-- **Code und README synchron halten.** Die README ist reine Betriebsdokumentation: keine Entwicklungsverläufe und keine Fehlersuch-Geschichten, Änderungen nur als kurze Liste am Ende („Änderungen“).
-- Releases nur mit geprüfter Doku.
-- Sicherheit: Delegation statt Passwort, keine zusätzliche Admin-Gruppe, „Jeder“ auf NTFS abraten. Keine Umgebungsdaten (OUs, Servernamen, Domänen) im Repo.
+- **Language:** English is primary for scripts (comments, help, messages), README and docs; German versions exist as `README.de.md` and `docs/de/`. Chat answers to the owner remain German.
+- **Add nothing without a request.** Ask before optional changes. Examples from the history so far: an admin group was removed again on request, a configuration file for the Prepare variables was offered and not wanted, the text of the reboot message "is fine as it is".
+- **Be honest about what is untested.** Do not present as confirmed anything that has not run on Windows/AD. Anything beyond the pilot-confirmed points below was checked in a Linux sandbox with mocks (PowerShell 7, no Pester, no AD); the mocks are not part of the repo.
+- **Keep code and README in sync.** The README is pure operations documentation: no development history and no troubleshooting stories, changes only as a short list at the end ("Changes"). Keep the German versions in sync as well.
+- Releases only with verified documentation.
+- Security: delegation instead of a password, no additional admin group, advise against "Everyone" on NTFS. No environment data (OUs, server names, domains) in the repo.
 
-## Architektur und Entscheidungen
+## Architecture and decisions
 
-- **Delegation:** an SELF (`S-1-5-10`) auf Computerobjekten unter den Client-OUs, 8 Rechte: Schreiben `cn`, `name`, `sAMAccountName`, `displayName`, Account Restrictions, Reset password, Validated Writes DNS-Hostname und SPN. Prinzipale immer **per SID** vergleichen, nie per Namen (deutsch: „NT-AUTORITÄT\SELF“).
-- **Share** `\\<Server>\HostRename$` (`C:\HostRename`): `scripts` nur lesen, `log` mit `(OI)(CI)(WD,AD,WEA,WA,RA,RC,S)` für Domänencomputer. Der Share wird nur lokal auf dem Fileserver angelegt, Delegation und GPO auf Admin-PC oder DC (`$ShareServer` muss der Fileserver sein).
-- **GPO** `COMP - HostRename` (Link wird deaktiviert angelegt): GPP **Files** (Aktion **R**eplace) kopiert das Skript nach `C:\Program Files\HostRename`; GPP **Scheduled Task** `HostRename` (SYSTEM, `S-1-5-18`, S4U) mit Trigger **Systemstart + 5 Min.** und **Registrierung ohne Delay**, Aktion **C**reate; Item-Level-Targeting: Marker nicht vorhanden. Das XML wird von Hand erzeugt (kein GPMC) und folgt GPMC-Beispielen.
-- **Registry:** `HKLM\SOFTWARE\HostRename` (Marker, wirkt allein durch Existenz: Completed, ComputerName) und `HKLM\SOFTWARE\HostRenameState` (TargetName, Template; OriginalName, Applied, FutureId nur Nachweis). Bewusst getrennt: Läge der Zustand im Marker-Schlüssel, würde die GPO schon nach der Umbenennung aufhören, Skript und Task anzuwenden, vor der Bereinigung.
-- **Bereinigung** (`-Cleanup`): erst Logs flushen und zentral zustellen, dann Marker setzen, Task und Skript löschen, danach lokale Logs. Schlägt die Zustellung fehl, bleibt der Task (`CLEANUP_DEFERRED`). Optionale Bereinigungs-GPO löscht die Registry-Schlüssel per GPP-Registry (Aktion D); Schutz: nur Schlüssel, deren letzter Teil mit `HostRename` beginnt, und nur wenn die Haupt-GPO nicht mehr existiert (`-Force` hebt das auf).
-- **Neustart** nur mit `-Reboot` (`$Reboot`): `shutdown.exe /r /t <RebootDelaySeconds> /c <Text> /d p:4:1`. Bei Wartezeit > 0 ist `/f` impliziert, offene Programme werden also geschlossen. Der Meldungstext ist fest codiert.
-- **Versionsangabe:** `$ScriptVersion` im Client-Skript steht im START-Eintrag des Logs und muss zur Version in `.NOTES` aller Skripte passen (prüft `HostRename.Local.Tests.ps1`).
+- **Delegation:** to SELF (`S-1-5-10`) on computer objects under the client OUs, 8 rights: write `cn`, `name`, `sAMAccountName`, `displayName`, Account Restrictions, Reset password, validated writes DNS host name and SPN. Always compare principals **by SID**, never by name (German: "NT-AUTORITÄT\SELF").
+- **Share** `\\<Server>\HostRename$` (`C:\HostRename`): `scripts` read-only, `log` with `(OI)(CI)(WD,AD,WEA,WA,RA,RC,S)` for domain computers. The share is created only locally on the file server, delegation and GPO on an admin PC or DC (`$ShareServer` must be the file server).
+- **GPO** `COMP - HostRename` (link is created disabled): GPP **Files** (action **R**eplace) copies the script to `C:\Program Files\HostRename`; GPP **Scheduled Task** `HostRename` (SYSTEM, `S-1-5-18`, S4U) with trigger **boot + 5 min** and **registration without delay**, action **C**reate; item-level targeting: marker does not exist. The XML is generated by hand (no GPMC) and follows GPMC examples.
+- **Registry:** `HKLM\SOFTWARE\HostRename` (marker, works through its mere existence: Completed, ComputerName) and `HKLM\SOFTWARE\HostRenameState` (TargetName, Template; OriginalName, Applied, FutureId evidence only). Deliberately separate: if the state were in the marker key, the GPO would stop applying script and task right after the rename, before the cleanup.
+- **Cleanup** (`-Cleanup`): first flush the logs and deliver them centrally, then set the marker, delete task and script, then the local logs. If delivery fails, the task stays (`CLEANUP_DEFERRED`). The optional cleanup GPO deletes the registry keys via GPP Registry (action D); protection: only keys whose last part starts with `HostRename`, and only if the main GPO no longer exists (`-Force` overrides this).
+- **Reboot** only with `-Reboot` (`$Reboot`): `shutdown.exe /r /t <RebootDelaySeconds> /c <text> /d p:4:1`. With a delay > 0, `/f` is implied, so open programs are closed. The message text is hard-coded.
+- **Version number:** `$ScriptVersion` in the client script appears in the log's START entry and must match the version in `.NOTES` of all scripts (checked by `HostRename.Local.Tests.ps1`).
 
-## Fallstricke (so gelernt, nicht erneut ausprobieren)
+## Pitfalls (learned the hard way, do not try again)
 
-1. **GPMC-Bericht:** Ein `<Delay>` im `RegistrationTrigger` lässt den Reiter „Einstellungen“ der GPO mit „Unbekannter Fehler bei der Erstellung des HTML-Berichts“ scheitern (belegt: Kandidatentest, alle Varianten mit Delay scheitern, derselbe Trigger ohne Delay wird angezeigt). Die GPO wirkt auf den Clients trotzdem. Deshalb der Registrierungs-Trigger **ohne** Delay. Vor Änderungen am Task-XML den Bericht in der GPMC prüfen oder `tools/Test-GpoReport.ps1` (Fehlersuche) bzw. `-Candidates` (Trigger-Konstruktionen) laufen lassen. Die Reihenfolge der Elemente im Task-XML folgt der GPMC (z. B. `Repetition` zuletzt im `CalendarTrigger`).
-2. **GPP-Aktion Update beim Task:** Der Task startete nach einem Neustart nicht. Plausible, nicht bewiesene Ursache: Die GPO schreibt ihn beim Hochfahren neu, nach dem Systemstart-Trigger. Daher Standard **Create**. Folge: Änderungen an der Task-Definition (Regel, Neustart-Schalter, Pfade) erreichen vorhandene Tasks nicht; auf noch nicht fertigen Geräten den Task einmal löschen (`Unregister-ScheduledTask -TaskName HostRename -Confirm:$false`). Das Skript selbst aktualisiert die Dateikopie weiter.
-3. **GPP-Files mit Aktion Update** scheiterte beim Überschreiben (Ereignis 4117, `0x50`). Daher **Replace**.
-4. **Kontoname im Task:** „NT AUTHORITY\System“ funktioniert auf deutschen Clients nicht (Ereignis 1085). Immer `SYSTEM` bzw. die SID.
-5. **NTFS auf `log`:** Das Recht „Attribute lesen“ (`RA`) ist nötig, „Schreiben“ allein reichte nicht. Delegation ohne Reset password und Account Restrictions endet mit „Zugriff verweigert“.
-6. **PowerShell-Eigenheiten:** `#Requires` muss **nach** dem Comment-Based-Help stehen, sonst wird die Hilfe nicht erkannt. In Pester ist `$Matches` nach `Should -Match` nicht verlässlich (stattdessen `[regex]::Match`). Keine PS7-only-Konstrukte in den Skripten.
-7. Die CSE-Liste der GPO wird sortiert eingetragen (Files vor Scheduled Tasks); die Reihenfolge der Verarbeitung auf dem Client ist nicht geprüft.
+1. **GPMC report:** A `<Delay>` in the `RegistrationTrigger` makes the "Settings" tab of the GPO fail with "Unknown error while creating the HTML report" (proven: candidate test, all variants with a delay fail, the same trigger without a delay is displayed). The GPO works on the clients anyway. Hence the registration trigger **without** delay. Before changing the task XML, check the report in the GPMC or run `tools/Test-GpoReport.ps1` (troubleshooting) or `-Candidates` (trigger constructions). The order of elements in the task XML follows the GPMC (e.g. `Repetition` last in the `CalendarTrigger`).
+2. **GPP action Update on the task:** The task did not start after a reboot. Plausible, unproven cause: the GPO rewrites it at boot, after the boot trigger. Hence the default **Create**. Consequence: changes to the task definition (rule, reboot switch, paths) do not reach existing tasks; on devices that are not finished yet, delete the task once (`Unregister-ScheduledTask -TaskName HostRename -Confirm:$false`). The script itself keeps updating the file copy.
+3. **GPP Files with action Update** failed when overwriting (event 4117, `0x50`). Hence **Replace**.
+4. **Account name in the task:** "NT AUTHORITY\System" does not work on German clients (event 1085). Always `SYSTEM` or the SID.
+5. **NTFS on `log`:** The right "read attributes" (`RA`) is required, "write" alone was not enough. A delegation without Reset password and Account Restrictions ends with "access denied".
+6. **PowerShell quirks:** `#Requires` must come **after** the comment-based help, otherwise the help is not recognized. In Pester, `$Matches` is unreliable after `Should -Match` (use `[regex]::Match` instead). No PS7-only constructs in the scripts.
+7. The GPO's CSE list is entered sorted (Files before Scheduled Tasks); the processing order on the client has not been verified.
 
-## Prüfstand
+## Test status
 
-**Im Pilot bestätigt** (Windows 11, deutsche Systemsprache): Delegation und Umbenennen (mit Reset password und Account Restrictions), sprachunabhängiges Task-Konto, Ersetzen der Skriptkopie (Replace), Selbstlöschung von Task und Marker, Aufräumen der lokalen Dateien nach Zustellung der Logs. Die Local-Tests liefen in 5.1 durch (62 von 63; der eine Fehler war ein Testfehler und ist behoben).
+**Confirmed in the pilot** (Windows 11, German system language): delegation and renaming (with Reset password and Account Restrictions), language-independent task account, replacement of the script copy (Replace), self-deletion of task and marker, cleanup of the local files after delivery of the logs. In addition, the owner has confirmed that everything implemented so far works: the task start in the current construction (immediately after creation and 5 min after boot), appending to the central log with exactly the permission set applied by setup, the Dc and Client Pester tests, the GPMC settings report of the current GPO, the item-level-targeting roundtrip test and the cleanup GPO. The Local tests ran through in 5.1 (62 of 63; the one failure was a test bug and has been fixed).
 
-**Nicht belegt:**
-- Die Dc- und Client-Tests nach den Änderungen am Registrierungs-Trigger (angepasst, aber nie mit Pester auf Windows gelaufen) sowie das Ergebnis früherer Dc-Läufe.
-- Der GPMC-Bericht der aktuellen GPO (nur der Kandidat „Systemstart + Registrierung ohne Delay, Create“ war im Test sauber).
-- Das Anfügen an das zentrale Log mit exakt dem vom Setup gesetzten Rechteset (nach `icacls <Datei> /reset`), der Roundtrip-Test für das Item-Level-Targeting und die Bereinigungs-GPO (das Registry-XML ist weder gegen eine echte GPMC noch gegen einen Client geprüft).
-- Der Start des Tasks in der aktuellen Konstruktion: Der Nutzer berichtet zuletzt, die Lösung getestet zu haben und dass sie funktioniert; die Einzelheiten sind nicht festgehalten. Der Abschnitt „Erprobungsstand“ der README ist deshalb eventuell veraltet: **beim Nutzer nachfragen, was genau bestätigt ist**, und die README danach anpassen.
+Everything added after version 1.1.9 (ACMP mode, network gate, certificate renewal) is untested until it has run on Windows/AD.
 
-## Offene Punkte (nur auf Wunsch oder nach Rückfrage anfassen)
+## Open points (touch only on request or after asking)
 
-- Der Task kann theoretisch starten, bevor die GPO die Skriptkopie angelegt hat; der Folgelauf (Systemstart + 5 Min.) fängt das ab.
-- Der Rückgabewert von `shutdown.exe` wird nicht geprüft; ist schon ein Neustart geplant, steht trotzdem „Neustart geplant“ im Log. Der Nutzer hat entschieden, dass der Neustart so bleibt.
-- Repo-Themen: Es gibt noch keine `LICENSE` (Lizenz und Sichtbarkeit sind Entscheidung des Nutzers) und keine CI. Möglich wären Syntaxprüfung und PSScriptAnalyzer; die Pester-Tests gegen AD nicht.
-- Unbeantwortet geblieben: ob `$TaskItemAction`, `$ShareAccessMode`, `-OuDN` und die Reset-password-Rechte so bleiben. Bis zur Klärung nicht ändern.
-- Akzeptierte Restmeldungen: PSScriptAnalyzer meldet bei den Produktivskripten u. a. `PSAvoidUsingWriteHost` (Prepare), `PSUseSingularNouns` und `PSReviewUnusedParameter`. Strict Mode ist nicht aktiviert (in den Mocks mit allen Szenarien identisch, aber nie scharf geschaltet).
-- Die Online-Doku (ein separates Dokument, das bisher von Hand mit der README abgeglichen wurde) ist für Claude Code nicht erreichbar; ab jetzt ist das Repo führend.
+- In theory the task can start before the GPO has created the script copy; the follow-up run (boot + 5 min) catches that.
+- The return value of `shutdown.exe` is not checked; if a reboot is already scheduled, the log still says "reboot scheduled". The owner decided that the reboot stays as it is.
+- Repo topics: `LICENSE` (MIT), `SECURITY.md`, issue/PR templates and a CI workflow exist; the CI workflow is yet to be adapted. Feasible are a syntax check and PSScriptAnalyzer; not the Pester tests against AD.
+- Left unanswered: whether `$TaskItemAction`, `$ShareAccessMode`, `-OuDN` and the Reset-password rights stay as they are. Do not change until clarified.
+- Accepted residual findings: PSScriptAnalyzer reports `PSAvoidUsingWriteHost` (Prepare), `PSUseSingularNouns` and `PSReviewUnusedParameter`, among others, for the production scripts. Strict mode is not enabled (identical in the mocks with all scenarios, but never switched on for real).
+- The online documentation (a separate document that was so far reconciled by hand with the README) is not reachable for Claude Code; from now on the repo is authoritative.
 
-## Prüfen und Release
+## Checks and release
 
-Prüfen vor jedem Commit:
+Check before every commit:
 
 ```powershell
-# Syntax aller Skripte
+# Syntax of all scripts
 Get-ChildItem -Recurse -Include *.ps1 | ForEach-Object {
     $e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$e)
     if ($e) { "$($_.Name): $($e.Message)" }
@@ -84,15 +82,15 @@ Invoke-Pester -Path .\HostRename.Local.Tests.ps1 -Output Detailed        # Peste
 Invoke-ScriptAnalyzer -Path . -Recurse
 ```
 
-Die Dc- und Client-Tests brauchen `HostRename.Checks.psd1`, also vorher `.\Prepare-HostRename.ps1 -Action Setup` (in einer Testumgebung, mit `-WhatIf` zuerst).
+The Dc and Client tests need `HostRename.Checks.psd1`, so run `.\Prepare-HostRename.ps1 -Action Setup` first (in a test environment, with `-WhatIf` first).
 
-Release (Beispiel Version `x.y.z`):
-1. Version in `.NOTES` aller Skripte, `$ScriptVersion` in `Invoke-HostRename.ps1`, Kommentar `(Version x.y.z)` in `HostRename.Checks.beispiel.psd1`, Kopfzeile der README (`Version x.y.z · Stand`), Beispiel „HostRename x.y.z: Vorlage …“ in der README und die Änderungsliste anpassen.
-2. Local-Tests laufen lassen (prüfen die Versionsgleichheit).
-3. Commit, Tag `vx.y.z`, ZIP als Release-Asset anhängen.
+Release (example version `x.y.z`):
+1. Adjust the version in `.NOTES` of all scripts, `$ScriptVersion` in `Invoke-HostRename.ps1`, the comment `(Version x.y.z)` in `HostRename.Checks.beispiel.psd1`, the README header line (`Version x.y.z · As of`), the example "HostRename x.y.z: template …" in the README, and the changes list. Do the same in `README.de.md`.
+2. Run the Local tests (they check version equality).
+3. Commit, tag `vx.y.z`, attach the ZIP as a release asset.
 
-## Erste Schritte
+## First steps
 
-1. `README.md` lesen (Betriebsdokumentation) und den Abschnitt „Sicherheit und bekannte Einschränkungen“.
-2. Die Local-Tests auf Windows laufen lassen und das Ergebnis festhalten.
-3. Den Nutzer fragen, welche der unter „Nicht belegt“ genannten Punkte er inzwischen getestet hat, und den „Erprobungsstand“ der README danach aktualisieren.
+1. Read `README.md` (operations documentation) and the section "Security and known limitations".
+2. Run the Local tests on Windows and record the result.
+3. Read `docs/roadmap.md` and `docs/acmp-deployment-plan.md` before starting on the ACMP work.

@@ -250,7 +250,12 @@ Describe 'Reporting values (Save-RunState)' {
         $LocalLog = Join-Path $LocalDir 'rename-local.csv'; $PendingLog = Join-Path $LocalDir 'pending.csv'
         $CsvHeader = 'h'; $CentralLogPath = ''
         $script:CurrentName = 'PC1'; $script:TargetName = ''; $script:Serial = ''; $script:MachineGuid = ''
-        Mock Test-Path { $false } -ParameterFilter { $Path -eq $StateKey }
+        # Default mock without parameter filter: Pester 6 no longer falls back to the original command
+        # when no parameter filter matches (Pester 5 did). File system paths are answered via .NET.
+        Mock Test-Path {
+            if ($Path -eq $StateKey) { return $false }
+            [System.IO.File]::Exists($Path) -or [System.IO.Directory]::Exists($Path)
+        }
         Mock New-Item { }
         Mock Set-ItemProperty { }
     }

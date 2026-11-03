@@ -4,6 +4,8 @@ Stand: 3. November 2026 · Status: Entscheidungen getroffen, Umsetzung läuft (V
 
 [English version](../acmp-deployment-plan.md)
 
+Aufbauanleitung: [acmp-anleitung.md](acmp-anleitung.md) · Gerätetestplan: [testplan.md](testplan.md)
+
 ## Ausgangslage
 
 - Rund 700 Clients, davon etwa 90 % Notebooks. Viele sind selten per Kabel im Firmennetz.
@@ -75,7 +77,7 @@ Ob der Schritt nötig ist und welche Vorlage gilt, klärt Phase 0.
 Ablauf in einem Client Command (Bausteine aus dem Editor: Dateien/File Repository, eigene Skripte, Bedingungen, Ablaufsteuerung, Dialoge):
 
 1. Skripte aus dem File Repository auf den Client übertragen.
-2. Zustand lesen (`HKLM\SOFTWARE\HostRename`, `HKLM\SOFTWARE\HostRenameState`): Ist das Gerät fertig, endet der Lauf.
+2. Zustand lesen: Existiert der Marker-Schlüssel `HKLM\SOFTWARE\HostRename`, ist das Gerät fertig und der Lauf endet. `TargetName` in `HKLM\SOFTWARE\HostRenameState` zeigt, dass die Umbenennung stattgefunden hat. Niemals die bloße Existenz von `HostRenameState` als Kriterium nehmen: Seit 1.2.0 existiert der Schlüssel nach jedem Lauf wegen der Berichtswerte.
 3. Gate ausführen. 20: Dialog „LAN-Kabel“; 21/22: still beenden.
 4. `Invoke-HostRename.ps1` ausführen (Parameter für Vorlage, Prefix usw. im Client Command).
 5. Exit-Code auswerten:

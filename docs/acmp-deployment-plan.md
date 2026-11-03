@@ -4,6 +4,8 @@
 
 As of: 3 November 2026 · Status: decisions taken, implementation in progress (version 1.2.0)
 
+Step-by-step build guide: [acmp-guide.md](acmp-guide.md) · Device test plan: [test-plan.md](test-plan.md)
+
 ## Starting point
 
 - About 700 clients, roughly 90% of them notebooks. Many are rarely connected by cable to the corporate network.
@@ -75,7 +77,7 @@ Whether the step is needed is clarified in the test phases; the template name is
 Flow in one Client Command (building blocks from the editor: files/file repository, custom scripts, conditions, flow control, dialogs):
 
 1. Transfer the scripts from the file repository to the client.
-2. Read the state (`HKLM\SOFTWARE\HostRename`, `HKLM\SOFTWARE\HostRenameState`): if the device is done, the run ends.
+2. Read the state: if the marker key `HKLM\SOFTWARE\HostRename` exists, the device is done and the run ends. `TargetName` in `HKLM\SOFTWARE\HostRenameState` shows that the rename has happened. Never use the mere existence of `HostRenameState` as the criterion: since 1.2.0 it exists after every run because of the reporting values.
 3. Run the gate. 20: "LAN cable" dialog; 21/22: end silently.
 4. Run `Invoke-HostRename.ps1` (parameters for template, prefix etc. in the Client Command).
 5. Evaluate the exit code:

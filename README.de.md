@@ -2,28 +2,33 @@
 
 [English version](README.md)
 
-Version 1.1.9 · Stand: 30. Oktober 2026
+Version 1.2.0 · Stand: 3. November 2026
 
 ## Überblick
 
 HostRename benennt domänengebundene Windows-Clients automatisch um und benennt dabei auch das zugehörige AD-Computerobjekt um. Die aktuelle Umbenennungslogik bildet den neuen Namen aus einer Vorlage: Prefix und Suffix um den bestehenden Namen und/oder die Seriennummer des Geräts. Standardmäßig wird ein festes Prefix vorangestellt (`PC1234` wird zu `NG-PC1234`); Namen über 15 Zeichen werden gekürzt oder übersprungen.
 
-Verteilt wird per GPO: Sie kopiert das Skript von einem zentralen Share auf den Client und legt dort einen Scheduled Task an. Nach erfolgreicher Umbenennung entfernen sich Task, Skript und lokale Logdateien selbst wieder. Jeder Schritt landet in einem zentralen CSV-Log, das sich pro Gerät filtern lässt.
+Verteilt wird per GPO: Sie kopiert das Skript von einem zentralen Share auf den Client und legt dort einen Scheduled Task an. Nach erfolgreicher Umbenennung entfernen sich Task, Skript und lokale Logdateien selbst wieder. Jeder Schritt landet in einem zentralen CSV-Log, das sich pro Gerät filtern lässt. Alternativ kann das Verteilwerkzeug ACMP die Skripte ausführen (siehe „Verteilung über ACMP“); GPO und ACMP sind alternative Verfahren und laufen nie auf demselben Gerät.
 
 Der Produktname ist bewusst neutral: Die Umbenennungsregel steckt nur in `Invoke-HostRename.ps1` und kann später ausgetauscht werden, ohne Share, Delegation, GPO-Hülle und Logging anzufassen.
 
 ## Komponenten
 
-HostRename besteht aus zwei Skripten (Preparation und Client), drei Pester-Testdateien und einer Beispiel-Konfiguration für die Tests. Jedes Skript hat eine eingebaute Hilfe mit allen Parametern und Beispielen, etwa `Get-Help .\Prepare-HostRename.ps1 -Full`. Skripte, Tests und Beispiel-Konfiguration liegen bewusst gemeinsam im Wurzelverzeichnis des Repositorys: Sie finden einander über ihren Ordner, und das Preparation-Skript schreibt die Test-Konfiguration daneben.
+HostRename besteht aus zwei Skripten (Preparation und Client), zwei wiederverwendbaren Bausteinen (Netzwerk-Gate, Zertifikatserneuerung), sechs Pester-Testdateien und einer Beispiel-Konfiguration für die Tests. Jedes Skript hat eine eingebaute Hilfe mit allen Parametern und Beispielen, etwa `Get-Help .\Prepare-HostRename.ps1 -Full`. Skripte, Tests und Beispiel-Konfiguration liegen bewusst gemeinsam im Wurzelverzeichnis des Repositorys: Sie finden einander über ihren Ordner, und das Preparation-Skript schreibt die Test-Konfiguration daneben.
 
 | Datei | Zweck | Ausführung |
 | --- | --- | --- |
 | `Prepare-HostRename.ps1` | Preparation: legt Share, AD-Delegation und GPO an oder entfernt sie (`-Action Setup` oder `Remove`). Prüft die Umbenennungsregel und zeigt Beispielnamen. Mehrere OUs möglich, einzelne per -OuDN. Optional am Ende eine Bereinigungs-GPO (`-Component CleanupGpo`). Alle Pfade als Variablen, schreibt `HostRename.Checks.psd1` | `Share` auf dem Fileserver; `Delegation`, `Gpo` und `CleanupGpo` auf einem Admin-PC mit RSAT oder einem DC (siehe „Share und GPO auf getrennten Maschinen“); einmalig, erhöhte PowerShell |
-| `Invoke-HostRename.ps1` | Client-Skript: Vorabprüfungen, Umbenennung nach Namensvorlage (Prefix, Suffix, Seriennummer), Logging, Selbstbereinigung | Client, per Scheduled Task als SYSTEM |
+| `Invoke-HostRename.ps1` | Client-Skript: Vorabprüfungen, Umbenennung nach Namensvorlage (Prefix, Suffix, Seriennummer), Logging, Selbstbereinigung; `-Deployment Gpo` (Standard) oder `Acmp` | Client, per Scheduled Task als SYSTEM (GPO) oder vom ACMP-Agent als SYSTEM ausgeführt |
+| `Test-DeploymentNetwork.ps1` | Netzwerk-Gate: stellt fest, ob das Gerät die Domäne über LAN-Kabel, DirectAccess oder nur über das Firmen-WLAN erreicht; Exit-Code 0/20/21/22/1 und eine Zusammenfassungszeile. Eigenständig, wiederverwendbar | Client, als SYSTEM vor einer Aktion (ACMP) |
+| `Update-ComputerCertificate.ps1` | Fordert ein neues Computerzertifikat einer Vorlage an, wenn das vorhandene den aktuellen DNS-Namen nicht trägt (nach einer Umbenennung); `-RemoveOld` entfernt veraltete. Eigenständig, wiederverwendbar | Client, als SYSTEM nach dem Neustart (ACMP) |
 | `HostRename.Checks.psd1` | Konfiguration der Tests. Wird beim Setup vom Preparation-Skript geschrieben und ist deshalb nicht im Repository (`.gitignore`); `HostRename.Checks.beispiel.psd1` zeigt den Aufbau | neben den Testdateien |
 | `HostRename.Dc.Tests.ps1` | Pester: Schema, Delegation, GPO/SYSVOL, Shares (nur lesend) | DC oder Admin-PC |
 | `HostRename.Client.Tests.ps1` | Pester: SYSTEM-Kontext, Rechteprüfung, Shares, GPO-Anwendung, Vorschau des Zielnamens, Deployment-Zustand | Pilot-Client |
 | `HostRename.Local.Tests.ps1` | Pester: Syntax, CSE-GUIDs, icacls, Selbstlöschung eines Tasks, Namensvorlagen, Seriennummern-Bewertung, Zukunfts-ID | DC und Client |
+| `HostRename.Network.Tests.ps1` | Pester (Mocks): Netzwerk-Gate, Erkennung und Exit-Codes | beliebiger Rechner, kein AD nötig |
+| `HostRename.Certificate.Tests.ps1` | Pester (Mocks): Zertifikatserneuerung | beliebiger Rechner, kein AD und keine CA nötig |
+| `HostRename.Acmp.Tests.ps1` | Pester (Mocks): ACMP-Modus, optionales zentrales Log, Berichtswerte | beliebiger Rechner, kein AD nötig |
 
 Namen im System:
 
@@ -36,8 +41,8 @@ Namen im System:
 | Lokaler Ordner (Client) | `C:\Program Files\HostRename` |
 | Registry-Marker (Client) | `HKLM\SOFTWARE\HostRename` |
 | Zentrales Log | `\\<Server>\HostRename$\log\rename-log.csv` |
-| Lokales Log (Client) | `C:\Program Files\HostRename\rename-local.csv` |
-| Zustand (Client) | `HKLM\SOFTWARE\HostRenameState` mit Ursprungsname, Zielname und Vorlage |
+| Lokales Log (Client) | `C:\Program Files\HostRename\rename-local.csv` (ACMP-Modus: `C:\ProgramData\HostRename\rename-local.csv`) |
+| Zustand und Berichtswerte (Client) | `HKLM\SOFTWARE\HostRenameState` mit Ursprungsname, Zielname, Vorlage und den Berichtswerten des letzten Laufs |
 
 ## Funktionsweise
 
@@ -92,7 +97,7 @@ Get-ChildItem .\* -Include *.ps1,*.psd1 | Unblock-File
 
 ### 1. Preparation-Skript konfigurieren
 
-`Prepare-HostRename.ps1` legt Share, AD-Delegation und GPO an oder entfernt sie wieder. Alle Pfade und Namen stehen als Variablen im Block „HIER ANPASSEN“ am Anfang des Skripts. Mindestens prüfen: `$ShareServer`, `$ShareRoot`, `$ClientOuDN` (Liste, mehrere OUs möglich), `$NameTemplate` (oder `$Prefix`/`$Suffix`), `$SecurityFilterGroup` (Pilot-Gruppe mit Computerkonten) und `$LinkTargetOU` (leer lassen, solange nicht verknüpft werden soll). `Invoke-HostRename.ps1` muss neben dem Skript liegen, damit es auf den Share kopiert wird. Alle Skript- und Konfigurationsdateien sind UTF-8 mit BOM gespeichert; das ist für die Windows PowerShell 5.1 nötig, sonst werden Umlaute und Gedankenstriche falsch gelesen und das Skript bricht mit Parserfehlern ab. Beim Bearbeiten die Kodierung beibehalten (in VS Code: „UTF-8 with BOM“).
+`Prepare-HostRename.ps1` legt Share, AD-Delegation und GPO an oder entfernt sie wieder. Alle Pfade und Namen stehen als Variablen im Block „ADJUST HERE“ am Anfang des Skripts. Mindestens prüfen: `$ShareServer`, `$ShareRoot`, `$ClientOuDN` (Liste, mehrere OUs möglich), `$NameTemplate` (oder `$Prefix`/`$Suffix`), `$SecurityFilterGroup` (Pilot-Gruppe mit Computerkonten) und `$LinkTargetOU` (leer lassen, solange nicht verknüpft werden soll). `Invoke-HostRename.ps1` muss neben dem Skript liegen, damit es auf den Share kopiert wird. Alle Skript- und Konfigurationsdateien sind UTF-8 mit BOM gespeichert; das ist für die Windows PowerShell 5.1 nötig, sonst werden Umlaute und Gedankenstriche falsch gelesen und das Skript bricht mit Parserfehlern ab. Beim Bearbeiten die Kodierung beibehalten (in VS Code: „UTF-8 with BOM“).
 
 ### 2. Trocken testen
 
@@ -131,7 +136,7 @@ Ein einziger Lauf für alles geht nur, wenn alle Komponenten auf derselben Masch
 
 Vorgehen:
 
-1. Das Repository auf beiden Maschinen bereitstellen (`git clone` oder ZIP-Download; bei einem ZIP zuerst `Unblock-File` auf die Dateien anwenden) und in **beiden Kopien dieselben Werte** im Block „HIER ANPASSEN“ eintragen. Entscheidend ist `$ShareServer`: Hier steht der **Name des Fileservers**. Der Vorgabewert ist der Rechner, auf dem das Skript läuft, und wäre auf dem Admin-PC falsch. Dazu kommen `$ShareRoot`, `$ShareName`, `$ClientOuDN`, die Umbenennungsregel und die Task-Einstellungen.
+1. Das Repository auf beiden Maschinen bereitstellen (`git clone` oder ZIP-Download; bei einem ZIP zuerst `Unblock-File` auf die Dateien anwenden) und in **beiden Kopien dieselben Werte** im Block „ADJUST HERE“ eintragen. Entscheidend ist `$ShareServer`: Hier steht der **Name des Fileservers**. Der Vorgabewert ist der Rechner, auf dem das Skript läuft, und wäre auf dem Admin-PC falsch. Dazu kommen `$ShareRoot`, `$ShareName`, `$ClientOuDN`, die Umbenennungsregel und die Task-Einstellungen.
 2. Auf dem Fileserver: `.\Prepare-HostRename.ps1 -Action Setup -Component Share`
 3. Auf dem Admin-PC bzw. DC: `.\Prepare-HostRename.ps1 -Action Setup -Component Delegation, Gpo`. Die GPO-Anlage prüft, ob der Quellordner `\\<Fileserver>\HostRename$\scripts` erreichbar ist, und warnt sonst; die GPO wird trotzdem angelegt. Das Skript warnt außerdem, wenn `$ShareServer` der lokale Rechner ist und dort keine Freigabe existiert.
 4. Tests: DC-Tests auf dem Admin-PC bzw. DC (sie greifen per UNC auf den Share zu und brauchen dafür Administratorrechte auf dem Fileserver), Local-Tests auf jeder beteiligten Maschine, Client-Tests am Pilotgerät.
@@ -191,6 +196,12 @@ Sind alle Geräte umbenannt, räumt man in dieser Reihenfolge auf. Die Reihenfol
 
 Share und Logs bleiben bestehen. Die Bereinigungs-GPO gehört nicht zum Standard von `-Component`: Ohne Angabe entfernt `-Action Remove` sie nicht mit.
 
+## Verteilung über ACMP
+
+Alternativ zur GPO kann das Verteilwerkzeug ACMP die Skripte auf den Clients ausführen (als SYSTEM). GPO und ACMP sind alternative Verteilverfahren: nie beide auf demselben Gerät verwenden und die GPO nicht mit Geräten verknüpfen, die den ACMP-Client-Command erhalten. Im ACMP-Modus (`Invoke-HostRename.ps1 -Deployment Acmp`) steuert ACMP den Neustart (Exit-Code 3010 ist das Signal), die lokalen Logs liegen in `C:\ProgramData\HostRename`, das Cleanup löscht nie die Skriptdatei, und das zentrale CSV-Log ist optional (`-CentralLogPath ''`). Umbenannt wird nur über LAN-Kabel oder DirectAccess, was `Test-DeploymentNetwork.ps1` vorher prüft; `Update-ComputerCertificate.ps1` erneuert nach Umbenennung und Neustart das WLAN-Computerzertifikat. Die Delegation (`-Action Setup -Component Delegation`) bleibt nötig; der Share nur, wenn das zentrale Log genutzt wird.
+
+Schritt-für-Schritt-Anleitung zum Aufbau, Parameter und Exit-Code-Vertrag: [docs/de/acmp-anleitung.md](docs/de/acmp-anleitung.md). Gerätetestplan: [docs/de/testplan.md](docs/de/testplan.md). Hintergrund und Entscheidungen: [docs/de/ACMP-Umsetzungsplan.md](docs/de/ACMP-Umsetzungsplan.md).
+
 ## Berechtigungen
 
 Alle Clientzugriffe laufen als Computerkonto (SYSTEM); die Gruppe heißt auf deutschen Servern Domänencomputer. Share-Recht und NTFS-Recht gelten zusammen, wirksam ist die Schnittmenge.
@@ -227,11 +238,12 @@ Spalten: `Timestamp; Level; Event; ComputerName; TargetName; Serial; MachineGuid
 
 | Event | Bedeutung |
 | --- | --- |
-| `START`, `TRUNCATE` | Lauf gestartet (die Meldung nennt die Skriptversion, z. B. „HostRename 1.1.9: Vorlage …“), Name auf 15 Zeichen gekürzt |
+| `START`, `TRUNCATE` | Lauf gestartet (die Meldung nennt die Skriptversion, z. B. „HostRename 1.2.0: deployment Gpo, template …“), Name auf 15 Zeichen gekürzt |
 | `PERM_CHECK`, `PERM_DENIED` | Schreibrechte auf dem eigenen AD-Objekt geprüft bzw. fehlend (Exit-Code 4) |
 | `COLLISION`, `TOO_LONG`, `DNS_EXISTS` | Zielname im AD vergeben, zu lang (bei `Skip`), im DNS vorhanden (nur Warnung) |
 | `RENAMED`, `AD_VERIFY`, `REBOOT` | Umbenennung erfolgt, AD-Nachprüfung, Neustart geplant |
 | `PENDING_REBOOT`, `ALREADY_DONE` | Umbenennung wartet auf Neustart bzw. Name entspricht schon der Vorlage (nur lokal) |
+| `REBOOT_IGNORED` | `-Reboot` wurde zusammen mit `-Deployment Acmp` angegeben und wird ignoriert (Warnung); ACMP steuert den Neustart, Exit-Code 3010 ist das Signal |
 | `CLEANUP`, `CLEANUP_DONE`, `CLEANUP_DEFERRED`, `CLEANUP_FAILED` | Selbstbereinigung von Task, Skript und lokalen Logdateien |
 | `WHATIF` | Testlauf mit `-WhatIf`: meldet den Zielnamen, ändert nichts |
 | `RENAME_FAILED`, `PRECHECK` | Fehler beim Umbenennen bzw. fehlgeschlagene Vorabprüfung |
@@ -256,7 +268,7 @@ $log | Where-Object { $_.Serial -eq 'ABC123' -or $_.MachineGuid -eq '<GUID>' }
 $log | Where-Object Level -eq 'ERROR'
 ```
 
-Exit-Codes von `Invoke-HostRename.ps1`: `0` nichts zu tun oder WhatIf, `3010` umbenannt und Neustart nötig, `2` übersprungen (Name zu lang), `4` keine Berechtigung auf dem eigenen AD-Objekt, `5` keine verwendbare Seriennummer (nur bei `OnSerialProblem Skip`), `1` sonstiger Fehler.
+Exit-Codes von `Invoke-HostRename.ps1`: `0` nichts zu tun oder WhatIf, `3010` umbenannt und Neustart nötig, `2` übersprungen (Name zu lang), `4` keine Berechtigung auf dem eigenen AD-Objekt, `5` keine verwendbare Seriennummer (nur bei `OnSerialProblem Skip`), `1` sonstiger Fehler. Das zentrale Log ist optional: Mit `-CentralLogPath ''` wird nur das lokale Log geschrieben (die lokalen Logdateien bleiben dann erhalten, und das Cleanup wird nie wegen der Log-Zustellung verschoben).
 
 ## Tests
 
@@ -267,10 +279,16 @@ Die Pester-Checks klären, was sich ohne reale Umgebung nicht prüfen ließ. Vor
 | `HostRename.Dc.Tests.ps1` | DC oder Admin-PC mit RSAT, rein lesend | Schema-GUIDs der Validated Writes, Delegation auf der OU, GPO-Status, SYSVOL-Dateien, CSE-Eintrag, AD-Version gegen `GPT.INI`, Erkennung durch `Get-GPOReport`, NTFS-Rechte der Shares; falls vorhanden die Bereinigungs-GPO |
 | `HostRename.Local.Tests.ps1` | DC und Client, als Administrator | Syntax aller Skripte, CSE-GUIDs der Preferences (Files, Scheduled Tasks, Registry) in der Registry, icacls-Befehle, Selbstlöschung eines laufenden Tasks, Namensvorlagen, Seriennummern-Bewertung und Zukunfts-ID (aus `Invoke-HostRename.ps1` geladen) |
 | `HostRename.Client.Tests.ps1` | Pilot-Client, als lokaler Administrator | Computerkonto-Kontext (SYSTEM), echte Rechteprüfung auf dem eigenen AD-Objekt, Zugriff auf beide Shares, GPO-Anwendung, Vorschau des Zielnamens mit Seriennummer oder Zukunfts-ID des Geräts, Deployment-Zustand |
+| `HostRename.Network.Tests.ps1` | beliebiger Rechner, kein AD nötig | Netzwerk-Gate: Erkennung von LAN, DirectAccess, WLAN und Domänenerreichbarkeit (gemockt), Entscheidung und Exit-Codes, Ergebniszeile |
+| `HostRename.Certificate.Tests.ps1` | beliebiger Rechner, kein AD und keine CA nötig | Zertifikatserneuerung: SAN-Auswertung, Vorlagenerkennung, Entscheidungen zu Erneuerung und Entfernen mit gemocktem Speicher und Enrollment |
+| `HostRename.Acmp.Tests.ps1` | beliebiger Rechner, kein AD nötig | Parameter `-Deployment`, lokaler Ordner je Modus, abgeschaltetes zentrales Log, Cleanup-Entscheidungen je Modus, Berichtswerte |
 
 ```powershell
 Invoke-Pester -Path .\HostRename.Dc.Tests.ps1 -Output Detailed
 Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Client.Tests.ps1 -Output Detailed
+
+# AD-freie Tests (Mocks), auch auf einem Entwicklerrechner oder in CI
+Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1 -Output Detailed
 
 # nach Umbenennung und Neustart des Piloten
 $c = New-PesterContainer -Path .\HostRename.Client.Tests.ps1 -Data @{ Phase = 'PostRun' }
@@ -288,6 +306,7 @@ Der Client-Test legt kurzzeitig temporäre SYSTEM-Tasks an und schreibt eine Tes
 Das größte Risiko ist der Quell-Share: Das Skript läuft auf allen Clients als SYSTEM, wer es dort ändern kann, führt Code auf allen Geräten aus. Auf `\scripts` dürfen deshalb nur Administratoren schreiben.
 
 - **Delegation:** Ein Gerät mit lokalen Adminrechten kann sein eigenes AD-Objekt auf einen freien Namen innerhalb der OU umbenennen. Die Delegation daher auf die Client-OU begrenzen und nach dem Rollout mit `-Action Remove -Component Delegation` entfernen.
+- **ACMP:** Wer die Skripte im ACMP-Dateirepository ändern kann, führt Code als SYSTEM auf allen Geräten aus, die den Client-Command erhalten; Schreibrechte dort wie auf `\scripts` einschränken. Im ACMP-Modus liegen die lokalen Logs in `C:\ProgramData\HostRename`; die ACL dieses Ordners prüfen (siehe „Lokaler Ordner“).
 - **Lokaler Ordner:** `C:\Program Files\HostRename` ist durch die Standard-ACL geschützt: Standardbenutzer dürfen dort nichts anlegen oder ändern, deshalb ist `$HardenLocalFolder = $false` der Standard und der Task führt keine icacls-Aktionen aus. Dasselbe gilt für die lokalen Logs (`-LocalDir`), in die SYSTEM schreibt. Liegt der Ordner in einem für Benutzer beschreibbaren Bereich wie `C:\ProgramData`, sollte `$HardenLocalFolder = $true` gesetzt werden: Der Task sperrt ihn dann vor jedem Lauf per icacls (Besitzer Administratoren, Schreiben nur SYSTEM und Administratoren). Ein vorab angelegter Ordner, eine Verknüpfung und das Zeitfenster bis zum ersten Lauf bleiben in diesem Fall ein Restrisiko.
 - **Neustart:** Nach `Rename-Computer` ist das AD-Objekt sofort umbenannt, der Client trägt den alten Namen aber bis zum Neustart. In dieser Zeit passen Computername und Computerkonto nicht zusammen. Ohne `$Reboot` muss der reguläre Neustartzyklus der Geräte kurz sein.
 - **Prüfung der Rechte:** `Invoke-HostRename.ps1` liest `allowedAttributesEffective` und prüft damit Schreibrechte auf `cn` und `sAMAccountName`. Die Validated Writes für DNS-Hostname und SPN lassen sich so nicht verlässlich prüfen; fehlen sie, meldet `Rename-Computer` den Fehler und er steht im Log.
@@ -299,6 +318,8 @@ Das größte Risiko ist der Quell-Share: Das Skript läuft auf allen Clients als
 - **Start des Tasks:** Der Registrierungs-Trigger startet den Task sofort, wenn die GPO ihn anlegt, ohne Verzögerung: Ein Delay-Element im Trigger ließe den HTML-Bericht der GPO in der GPMC scheitern. Theoretisch kann der Task starten, bevor die GPO die Skriptkopie angelegt hat; dann schlägt dieser Lauf fehl, und der Systemstart-Trigger (5 Minuten) holt ihn beim nächsten Neustart nach.
 
 **Erprobungsstand:** Im Pilot auf einem Windows-11-Client mit deutscher Systemsprache ist alles bestätigt, was bisher umgesetzt ist: Delegation und Umbenennen (mit den Rechten Reset password und Account Restrictions), das sprachunabhängige Task-Konto, das Ersetzen der Skriptkopie durch die GPO (Aktion Replace), der Start des Tasks in der aktuellen Konstruktion (sofort nach dem Anlegen und 5 Minuten nach einem Neustart), das Löschen des Tasks aus sich selbst heraus samt Marker, das Aufräumen der lokalen Dateien nach der Zustellung der Logs, das Anfügen an das zentrale Log mit genau dem vom Setup gesetzten Rechteset, die Dc- und Client-Pester-Tests, der GPMC-Einstellungsbericht der aktuellen GPO, der Roundtrip-Test für das Item-Level-Targeting und die Bereinigungs-GPO.
+
+Alles, was in 1.2.0 hinzugekommen ist (ACMP-Modus, Netzwerk-Gate, Zertifikatserneuerung, optionales zentrales Log, Berichtswerte), ist nur mit Mocks getestet (Linux, PowerShell 7) und ist auf echten Geräten und in ACMP noch nicht gelaufen. Der GPO-Weg ist konstruktionsbedingt unverändert, aber das Client-Skript 1.2.0 braucht im Pilot noch einen Regressionstest. Der Gerätetestplan ist [docs/de/testplan.md](docs/de/testplan.md).
 
 ## Betrieb
 
@@ -318,9 +339,10 @@ Im Betrieb sind drei Dinge zu wissen: wie man zurückbaut, wo man bei Fehlern su
 | --- | --- | --- |
 | `HKLM\SOFTWARE\HostRenameState` | `TargetName`, `Template` | Zustand nach der Umbenennung; die Logik liest beide: Ein Gerät gilt als erledigt, wenn sein Name dem `TargetName` entspricht und die Vorlage dieselbe ist. Bei einer anderen Vorlage wird es erneut umbenannt |
 | | `OriginalName`, `Applied`, `FutureId` | nur Nachweis: Name vor der Umbenennung, Zeitpunkt, verwendete Zukunfts-ID (leer, wenn keine) |
+| | `LastRun`, `LastExitCode`, `LastEvent`, `Deployment`, `ScriptVersion` | Berichtswerte, am Ende jedes Laufs geschrieben (nicht mit `-WhatIf`), z. B. für ACMP-Custom-Fields: Zeitpunkt, Exit-Code, zuletzt protokollierter Ereigniscode (z. B. `RENAMED`), `Gpo` oder `Acmp`, Skriptversion. Die Skriptlogik liest sie nie |
 | `HKLM\SOFTWARE\HostRename` | `Completed`, `ComputerName` | Marker, den erst die Bereinigung setzt: Die GPO legt Skript und Task nicht mehr an, sobald der Schlüssel existiert |
 
-Die beiden Schlüssel sind getrennt, weil der Marker allein durch seine Existenz wirkt. Läge der Zustand im selben Schlüssel, würde die GPO schon nach der Umbenennung aufhören, Skript und Task anzuwenden, noch vor der Bereinigung. Nach Abschluss des Rollouts entfernt die optionale Bereinigungs-GPO beide Schlüssel auf allen Clients (siehe Abschluss).
+**`HostRenameState` existiert jetzt nach jedem Lauf**, wegen der Berichtswerte; seine Existenz bedeutet also nicht „fertig“. Ein Gerät ist fertig, wenn der Marker `HKLM\SOFTWARE\HostRename` existiert (von der Bereinigung gesetzt); `TargetName` zeigt, dass die Umbenennung stattgefunden hat. Die beiden Schlüssel sind getrennt, weil der Marker allein durch seine Existenz wirkt. Läge der Zustand im selben Schlüssel, würde die GPO schon nach der Umbenennung aufhören, Skript und Task anzuwenden, noch vor der Bereinigung. Nach Abschluss des Rollouts entfernt die optionale Bereinigungs-GPO beide Schlüssel auf allen Clients (siehe Abschluss).
 
 ### Fehlersuche
 
@@ -350,6 +372,7 @@ Meist genügt eine andere Vorlage: `$NameTemplate` in `Prepare-HostRename.ps1` �
 
 | Version | Änderung |
 | --- | --- |
+| 1.2.0 (3. November 2026) | ACMP als alternatives Verteilverfahren (`-Deployment Acmp`: lokale Logs in `C:\ProgramData\HostRename`, kein Neustart durch das Skript, Cleanup behält die Skriptdatei). Neues Netzwerk-Gate `Test-DeploymentNetwork.ps1` und Zertifikatserneuerung `Update-ComputerCertificate.ps1`. Zentrales Log optional (`-CentralLogPath ''`). Berichtswerte in `HostRenameState` (`LastRun`, `LastExitCode`, `LastEvent`, `Deployment`, `ScriptVersion`; der Schlüssel existiert jetzt nach jedem Lauf), Ereignis `REBOOT_IGNORED`. Skripte und Dokumentation auf Englisch, deutsche Dokumentation als Alternative. Nur mit Mocks getestet, noch nicht auf echten Geräten |
 | 1.1.9 | Task-Start überarbeitet: Registrierungs-Trigger (Start sofort nach dem Anlegen, ohne Verzögerung) und Systemstart-Trigger (5 Minuten), GPP-Aktion standardmäßig Create, kein täglicher Trigger. Neue Schalter `$RegistrationTrigger` und `$RepeatInterval`; `$RegistrationDelay` entfällt. Beim Wechsel die GPO neu anlegen und vorhandene Tasks auf noch nicht fertigen Geräten einmal löschen |
 | 1.1.5 bis 1.1.8 | Zwischenstände zum Task-Start, in 1.1.9 zusammengeführt |
 | bis 1.1.4 | Aufbau der Lösung: Preparation- und Client-Skript, Namensvorlagen, Bereinigung (auch per GPO), Tests |

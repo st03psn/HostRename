@@ -113,7 +113,7 @@
     Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)
 
 .LINK
-    docs/ACMP-Umsetzungsplan.md
+    docs/acmp-deployment-plan.md
 #>
 #Requires -Version 5.1
 

@@ -6,23 +6,26 @@ This file summarizes what is needed to continue the work: goal, decisions with r
 
 HostRename automatically renames domain-joined Windows clients (AD, German system language in the pilot) by GPO, using a name template (`{Name}`, `{Serial}`, prefix, suffix, future ID for an unusable or duplicate serial number). The client script runs as a scheduled task under SYSTEM, renames locally and the AD computer object (`Rename-Computer`), writes a central CSV log to a share and removes itself after success. There is no password: the permissions come from a delegation to SELF on the client OUs.
 
-Status: **version 1.1.9** (30 October 2026). The target environment is **Windows PowerShell 5.1**; PowerShell 7 works in addition.
+Status: **version 1.2.0** (3 November 2026). The target environment is **Windows PowerShell 5.1**; PowerShell 7 works in addition.
 
-## Next project: ACMP as an alternative deployment method
+## ACMP as an alternative deployment method (1.2.0)
 
-Next to GPO, HostRename is to be deployable through the deployment tool ACMP (about 700 clients, mostly notebooks, DirectAccess and EAP-TLS WLAN). GPO and ACMP are alternative deployment methods; never both active on the same device. The plan is in `docs/acmp-deployment-plan.md` (German: `docs/de/ACMP-Umsetzungsplan.md`), the schedule and test phases in `docs/roadmap.md`. The decisions are taken (see the plan, section "Decisions"); implementation is in progress (version 1.2.0). Create new scripts (network gate, certificate renewal) as standalone, reusable building blocks.
+Next to GPO, HostRename can be deployed through the deployment tool ACMP (about 700 clients, mostly notebooks, DirectAccess and EAP-TLS WLAN). **Owner decision: GPO and ACMP are alternative deployment methods; never both active on the same device.** ACMP mode is `Invoke-HostRename.ps1 -Deployment Acmp` (local logs in `C:\ProgramData\HostRename`, `-Reboot` ignored, cleanup keeps the script file, central log optional via `-CentralLogPath ''`). Rename only over LAN cable or DirectAccess (gate default). Plan and decisions: `docs/acmp-deployment-plan.md`; build guide: `docs/acmp-guide.md`; device tests: `docs/test-plan.md`; schedule and test phases: `docs/roadmap.md` (German versions in `docs/de/`). The network gate and the certificate renewal are standalone, reusable building blocks.
 
 ## Repo
 
 Everything deliberately sits in the root directory: scripts and tests find each other through `$PSScriptRoot`, and `Prepare-HostRename.ps1` writes `HostRename.Checks.psd1` next to them. Do not move into subfolders without updating code and README.
 
-- `Prepare-HostRename.ps1`: setup/removal of share, delegation, GPO, optional cleanup GPO. Configuration through variables in the block "HIER ANPASSEN" (no configuration file).
-- `Invoke-HostRename.ps1`: client script. Exit codes: 0 nothing to do/-WhatIf, 3010 renamed (reboot required), 1 error, 2 name too long (skip), 4 no permission, 5 no usable serial number.
+- `Prepare-HostRename.ps1`: setup/removal of share, delegation, GPO, optional cleanup GPO. Configuration through variables in the block "ADJUST HERE" (no configuration file).
+- `Invoke-HostRename.ps1`: client script, `-Deployment Gpo|Acmp`. Exit codes: 0 nothing to do/-WhatIf, 3010 renamed (reboot required), 1 error, 2 name too long (skip), 4 no permission, 5 no usable serial number. Writes reporting values (`LastRun`, `LastExitCode`, `LastEvent`, `Deployment`, `ScriptVersion`) to `HKLM\SOFTWARE\HostRenameState`.
+- `Test-DeploymentNetwork.ps1`: network gate (exit 0 allowed path, 20 corporate WLAN only, 21 no domain connection, 22 path not allowed/unknown, 1 error; one summary line `RESULT=... EXIT=...`). Standalone.
+- `Update-ComputerCertificate.ps1`: certificate renewal (`-Template` mandatory, `-RemoveOld` optional; exit 0/1; summary line; exits 1 while a rename awaits the reboot). Standalone.
 - `HostRename.Dc.Tests.ps1`, `.Client.Tests.ps1`, `.Local.Tests.ps1`: Pester 5.3+. Dc and Client read `HostRename.Checks.psd1`, which setup writes from the variables (in `.gitignore`, never commit). `HostRename.Checks.beispiel.psd1` shows the structure.
+- `HostRename.Network.Tests.ps1`, `.Certificate.Tests.ps1`, `.Acmp.Tests.ps1`: Pester 5.3+, mocks only, no AD needed (run on any platform, also in CI).
 - `tools/Test-GpoReport.ps1`: diagnostics for the GPMC report (see pitfalls). Standalone, not part of the release package.
 - `.gitattributes`: LF in all text files. The `.ps1`/`.psd1` files are **UTF-8 with BOM** (without BOM, Windows PowerShell 5.1 reads them as ANSI). Create new PowerShell files the same way.
 - `LICENSE` (MIT), `SECURITY.md`, issue and PR templates and a CI workflow exist; the CI workflow is yet to be adapted.
-- `docs/`: `acmp-deployment-plan.md`, `roadmap.md`; German versions in `docs/de/` and `README.de.md`.
+- `docs/`: `acmp-deployment-plan.md`, `acmp-guide.md`, `test-plan.md`, `roadmap.md`, `development-history.md`; German versions in `docs/de/` (`ACMP-Umsetzungsplan.md`, `acmp-anleitung.md`, `testplan.md`, `roadmap.md`, `entwicklungsverlauf.md`) and `README.de.md`.
 
 ## Owner's working rules (binding)
 
@@ -38,7 +41,7 @@ Everything deliberately sits in the root directory: scripts and tests find each 
 - **Delegation:** to SELF (`S-1-5-10`) on computer objects under the client OUs, 8 rights: write `cn`, `name`, `sAMAccountName`, `displayName`, Account Restrictions, Reset password, validated writes DNS host name and SPN. Always compare principals **by SID**, never by name (German: "NT-AUTORITÄT\SELF").
 - **Share** `\\<Server>\HostRename$` (`C:\HostRename`): `scripts` read-only, `log` with `(OI)(CI)(WD,AD,WEA,WA,RA,RC,S)` for domain computers. The share is created only locally on the file server, delegation and GPO on an admin PC or DC (`$ShareServer` must be the file server).
 - **GPO** `COMP - HostRename` (link is created disabled): GPP **Files** (action **R**eplace) copies the script to `C:\Program Files\HostRename`; GPP **Scheduled Task** `HostRename` (SYSTEM, `S-1-5-18`, S4U) with trigger **boot + 5 min** and **registration without delay**, action **C**reate; item-level targeting: marker does not exist. The XML is generated by hand (no GPMC) and follows GPMC examples.
-- **Registry:** `HKLM\SOFTWARE\HostRename` (marker, works through its mere existence: Completed, ComputerName) and `HKLM\SOFTWARE\HostRenameState` (TargetName, Template; OriginalName, Applied, FutureId evidence only). Deliberately separate: if the state were in the marker key, the GPO would stop applying script and task right after the rename, before the cleanup.
+- **Registry:** `HKLM\SOFTWARE\HostRename` (marker, works through its mere existence: Completed, ComputerName) and `HKLM\SOFTWARE\HostRenameState` (TargetName, Template; OriginalName, Applied, FutureId evidence only; since 1.2.0 also the reporting values LastRun, LastExitCode, LastEvent, Deployment, ScriptVersion, written at the end of every run and never read by the logic). Deliberately separate: if the state were in the marker key, the GPO would stop applying script and task right after the rename, before the cleanup.
 - **Cleanup** (`-Cleanup`): first flush the logs and deliver them centrally, then set the marker, delete task and script, then the local logs. If delivery fails, the task stays (`CLEANUP_DEFERRED`). The optional cleanup GPO deletes the registry keys via GPP Registry (action D); protection: only keys whose last part starts with `HostRename`, and only if the main GPO no longer exists (`-Force` overrides this).
 - **Reboot** only with `-Reboot` (`$Reboot`): `shutdown.exe /r /t <RebootDelaySeconds> /c <text> /d p:4:1`. With a delay > 0, `/f` is implied, so open programs are closed. The message text is hard-coded.
 - **Version number:** `$ScriptVersion` in the client script appears in the log's START entry and must match the version in `.NOTES` of all scripts (checked by `HostRename.Local.Tests.ps1`).
@@ -52,12 +55,13 @@ Everything deliberately sits in the root directory: scripts and tests find each 
 5. **NTFS on `log`:** The right "read attributes" (`RA`) is required, "write" alone was not enough. A delegation without Reset password and Account Restrictions ends with "access denied".
 6. **PowerShell quirks:** `#Requires` must come **after** the comment-based help, otherwise the help is not recognized. In Pester, `$Matches` is unreliable after `Should -Match` (use `[regex]::Match` instead). No PS7-only constructs in the scripts.
 7. The GPO's CSE list is entered sorted (Files before Scheduled Tasks); the processing order on the client has not been verified.
+8. **Existence of `HostRenameState` is not "done".** Since 1.2.0 the key exists after every run (reporting values), also after errors and "nothing to do". "Done" is decided by the marker key `HKLM\SOFTWARE\HostRename` (set by the cleanup) or, for "renamed", by `TargetName` in `HostRenameState`. This applies to the ACMP flow, custom fields and any new check or documentation.
 
 ## Test status
 
 **Confirmed in the pilot** (Windows 11, German system language): delegation and renaming (with Reset password and Account Restrictions), language-independent task account, replacement of the script copy (Replace), self-deletion of task and marker, cleanup of the local files after delivery of the logs. In addition, the owner has confirmed that everything implemented so far works: the task start in the current construction (immediately after creation and 5 min after boot), appending to the central log with exactly the permission set applied by setup, the Dc and Client Pester tests, the GPMC settings report of the current GPO, the item-level-targeting roundtrip test and the cleanup GPO. The Local tests ran through in 5.1 (62 of 63; the one failure was a test bug and has been fixed).
 
-Everything added after version 1.1.9 (ACMP mode, network gate, certificate renewal) is untested until it has run on Windows/AD.
+Everything added in 1.2.0 (ACMP mode, network gate, certificate renewal, optional central log, reporting values) is **tested with mocks only** (Linux, PowerShell 7) and untested on real Windows/ACMP until the device tests in `docs/test-plan.md` have run. The GPO path is unchanged by design, but the 1.2.0 client script still needs a regression test in the pilot. Documentation must keep saying so.
 
 ## Open points (touch only on request or after asking)
 
@@ -78,14 +82,14 @@ Get-ChildItem -Recurse -Include *.ps1 | ForEach-Object {
     $e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$e)
     if ($e) { "$($_.Name): $($e.Message)" }
 }
-Invoke-Pester -Path .\HostRename.Local.Tests.ps1 -Output Detailed        # Pester 5.3+ (Install-Module Pester -MinimumVersion 5.3)
+Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1 -Output Detailed   # Pester 5.3+ (Install-Module Pester -MinimumVersion 5.3)
 Invoke-ScriptAnalyzer -Path . -Recurse
 ```
 
 The Dc and Client tests need `HostRename.Checks.psd1`, so run `.\Prepare-HostRename.ps1 -Action Setup` first (in a test environment, with `-WhatIf` first).
 
 Release (example version `x.y.z`):
-1. Adjust the version in `.NOTES` of all scripts, `$ScriptVersion` in `Invoke-HostRename.ps1`, the comment `(Version x.y.z)` in `HostRename.Checks.beispiel.psd1`, the README header line (`Version x.y.z · As of`), the example "HostRename x.y.z: template …" in the README, and the changes list. Do the same in `README.de.md`.
+1. Adjust the version in `.NOTES` of all scripts and test files (including `Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1` and the Network/Certificate/Acmp tests), `$ScriptVersion` in `Invoke-HostRename.ps1`, the comment `(Version x.y.z)` in `HostRename.Checks.beispiel.psd1`, the README header line (`Version x.y.z · As of`), the example "HostRename x.y.z: deployment Gpo, template …" in the README, the guide/test-plan header lines and the changes list. Do the same in `README.de.md` and the German docs.
 2. Run the Local tests (they check version equality).
 3. Commit, tag `vx.y.z`, attach the ZIP as a release asset.
 
@@ -93,4 +97,4 @@ Release (example version `x.y.z`):
 
 1. Read `README.md` (operations documentation) and the section "Security and known limitations".
 2. Run the Local tests on Windows and record the result.
-3. Read `docs/roadmap.md` and `docs/acmp-deployment-plan.md` before starting on the ACMP work.
+3. Read `docs/roadmap.md`, `docs/acmp-deployment-plan.md`, `docs/acmp-guide.md` and `docs/test-plan.md` before working on ACMP.

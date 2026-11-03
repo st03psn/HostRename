@@ -1,0 +1,64 @@
+name: Release
+
+# Started manually (Actions > Release > Run workflow). Builds the release ZIP from the
+# selected commit, creates the tag v<version> and the GitHub release with the ZIP attached.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without "v", e.g. 1.2.0 (must match $ScriptVersion in Invoke-HostRename.ps1)'
+        required: true
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check version and release notes
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid version: $VERSION"; exit 1; }
+          grep -q "^\$ScriptVersion = '$VERSION'" Invoke-HostRename.ps1 || { echo "\$ScriptVersion in Invoke-HostRename.ps1 is not $VERSION"; exit 1; }
+          test -f ".github/release-notes/v$VERSION.md" || { echo "Missing .github/release-notes/v$VERSION.md"; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then echo "Tag v$VERSION already exists"; exit 1; fi
+
+      - name: Build ZIP
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          dir="HostRename-$VERSION"
+          mkdir -p "dist/$dir"
+          # Release package: scripts and tests in the root (they find each other via $PSScriptRoot),
+          # sample test configuration, documentation and license. Not included: tools/ (diagnostics),
+          # CLAUDE.md, CONTRIBUTING.md, .github/, site/.
+          cp ./*.ps1 HostRename.Checks.beispiel.psd1 README.md README.de.md LICENSE SECURITY.md "dist/$dir/"
+          cp -r docs "dist/$dir/docs"
+          (cd dist && zip -r -X "$dir.zip" "$dir")
+          unzip -l "dist/$dir.zip"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "v$VERSION" "dist/HostRename-$VERSION.zip" \
+            --target "$GITHUB_SHA" \
+            --title "HostRename $VERSION" \
+            --notes-file ".github/release-notes/v$VERSION.md" \
+            "${flags[@]}"

@@ -5,6 +5,9 @@ name: Release
 # v<version> with all ZIPs attached, by default as a DRAFT: the workflow token may not create
 # a tag on an older commit (403), so a person publishes the draft (Releases > Edit > Publish),
 # which creates the tag v<version> on the source commit with that person's rights.
+# For an older commit even creating the draft fails with 403 (seen for v1.1.9): then push the tag
+# yourself first (git tag v<version> <sha>; git push origin v<version>) and run the workflow
+# again; an existing tag that points to the source commit is accepted.
 # Per version, these files must exist in .github/release-notes/ on the branch the workflow runs on:
 #   v<version>.md               release notes
 #   v<version>.<package>.files  one file list per package (e.g. v1.2.0.gpo.files, v1.2.0.acmp.files);
@@ -65,8 +68,19 @@ jobs:
           legacy="meta/.github/release-notes/v$VERSION.files"
           if [ -f "$legacy" ] && [ ${#lists[@]} -gt 0 ]; then echo "Both v$VERSION.files and v$VERSION.<package>.files exist; keep one format"; exit 1; fi
           if [ ! -f "$legacy" ] && [ ${#lists[@]} -eq 0 ]; then echo "Missing .github/release-notes/v$VERSION.<package>.files (or legacy v$VERSION.files)"; exit 1; fi
-          if git -C meta ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then echo "Tag v$VERSION already exists"; exit 1; fi
-          echo "SOURCE_SHA=$(git -C src rev-parse HEAD)" >> "$GITHUB_ENV"
+          SOURCE_SHA="$(git -C src rev-parse HEAD)"
+          echo "SOURCE_SHA=$SOURCE_SHA" >> "$GITHUB_ENV"
+          # An existing tag is accepted only if it points to the source commit (e.g. a tag the owner
+          # pushed for an older commit, which the workflow token may not create itself).
+          git -C meta fetch -q --tags origin
+          if git -C meta rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            TAG_SHA="$(git -C meta rev-parse "v$VERSION^{commit}")"
+            [ "$TAG_SHA" = "$SOURCE_SHA" ] || { echo "Tag v$VERSION exists but points to $TAG_SHA, not to the source $SOURCE_SHA"; exit 1; }
+            echo "Tag v$VERSION already exists on the source commit; the release uses it."
+            echo "TAG_EXISTS=true" >> "$GITHUB_ENV"
+          else
+            echo "TAG_EXISTS=false" >> "$GITHUB_ENV"
+          fi
 
       - name: Build ZIPs
         env:
@@ -135,8 +149,9 @@ jobs:
           elif [ "$PRERELEASE" != "true" ]; then flags+=(--latest); fi
           mapfile -t zips < dist/zips.txt
           [ ${#zips[@]} -gt 0 ] || { echo "No ZIP was built"; exit 1; }
+          # With an existing tag, --target is not passed (the tag defines the commit).
+          if [ "$TAG_EXISTS" != "true" ]; then flags+=(--target "$SOURCE_SHA"); fi
           gh release create "v$VERSION" "${zips[@]}" \
-            --target "$SOURCE_SHA" \
             --title "HostRename $VERSION" \
             --notes-file "meta/.github/release-notes/v$VERSION.md" \
             "${flags[@]}"

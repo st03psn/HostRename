@@ -6,7 +6,8 @@
     Runs on any Windows machine (DC and client) as administrator and does not need an AD object.
 
     CHECKS
-      1. Syntax of all .ps1 files in the script folder; consistent version information (variable in the client script and .NOTES)
+      1. Syntax of all .ps1 files in the script folder and its subfolders (tests, tools, components, deployments);
+         consistent version information (variable in the client script and .NOTES of all these .ps1 files)
       2. Are the CSE GUIDs for GPP "Files", "Scheduled Tasks" and "Registry" known on this system (gpprefcl.dll)?
       3. Do the icacls commands of the task work (owner and ACL of the local folder)? Does the protection of the
          ACMP log folder (Initialize-LocalDir in Invoke-HostRename.ps1) work on a real NTFS folder (skipped off-Windows)?
@@ -19,10 +20,11 @@
     The tests only create temporary objects under %ProgramData%\HostRename-Pester-* and clean them up again.
 
 .PARAMETER ScriptFolder
-    Folder containing the scripts (default: the folder of this test file).
+    Root folder of the repository or package, containing Invoke-HostRename.ps1 and Prepare-HostRename.ps1
+    (default: the parent folder of the folder of this test file, i.e. the folder above tests\).
 
 .EXAMPLE
-    Invoke-Pester -Path .\HostRename.Local.Tests.ps1 -Output Detailed
+    Invoke-Pester -Path .\tests\HostRename.Local.Tests.ps1 -Output Detailed
 
 .NOTES
     Product          HostRename
@@ -41,9 +43,12 @@ param(
 )
 
 BeforeDiscovery {
-    $folder = if ($ScriptFolder) { $ScriptFolder } else { $PSScriptRoot }
+    $folder = if ($ScriptFolder) { $ScriptFolder } else { Split-Path -Parent $PSScriptRoot }
+    $folder = (Resolve-Path -LiteralPath $folder).ProviderPath.TrimEnd('\', '/')
     $OnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
-    $ScriptFiles = @(Get-ChildItem -Path $folder -Filter '*.ps1' | ForEach-Object { @{ Name = $_.Name; Path = $_.FullName } })
+    # All .ps1 files of the repository or package, recursively (hidden folders such as .git are skipped)
+    $ScriptFiles = @(Get-ChildItem -Path $folder -Filter '*.ps1' -Recurse -File | Sort-Object FullName | ForEach-Object {
+        @{ Name = $_.FullName.Substring($folder.Length).TrimStart('\', '/').Replace('\', '/'); Path = $_.FullName } })
     $CseCases = @(
         @{ Name = 'Preferences: Files';           Guid = '{7150F9BF-48AD-4DA4-A49C-29EF4A8369BA}' }
         @{ Name = 'Preferences: Scheduled Tasks'; Guid = '{AADCED64-746C-4633-A97C-D61349046527}' }
@@ -80,7 +85,7 @@ BeforeDiscovery {
 }
 
 BeforeAll {
-    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { $PSScriptRoot }
+    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { Split-Path -Parent $PSScriptRoot }
 
     # Load the name template functions from the client script (same logic as on the clients)
     $invokePath = Join-Path $ScriptFolder 'Invoke-HostRename.ps1'
@@ -115,9 +120,10 @@ Describe 'Version information' {
         $ver  = [regex]::Match($inv, "(?m)^\`$ScriptVersion\s*=\s*'([^']+)'")
         $ver.Success | Should -BeTrue -Because '$ScriptVersion was not found in Invoke-HostRename.ps1'
         $code = $ver.Groups[1].Value
-        $notes = foreach ($f in Get-ChildItem -Path $ScriptFolder -Filter '*.ps1') {
+        # All .ps1 files of the repository or package, recursively (root, tests, tools, components, deployments)
+        $notes = foreach ($f in Get-ChildItem -Path $ScriptFolder -Filter '*.ps1' -Recurse -File) {
             $v = [regex]::Match((Get-Content -Raw -Path $f.FullName), '(?m)^\s+Version\s+(\S+)\s*$')
-            if ($v.Success) { [pscustomobject]@{ File = $f.Name; Version = $v.Groups[1].Value } }
+            if ($v.Success) { [pscustomobject]@{ File = $f.FullName; Version = $v.Groups[1].Value } }
         }
         @($notes).Count | Should -BeGreaterThan 0 -Because 'No version is given in the .NOTES of the scripts'
         $differ = @($notes | Where-Object { $_.Version -ne $code } | ForEach-Object { "$($_.File)=$($_.Version)" })

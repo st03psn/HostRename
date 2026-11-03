@@ -51,10 +51,13 @@
       plus structural checks of the wrapper (parses, single exit point, scripts it calls)
 
 .PARAMETER ScriptFolder
-    Folder containing the scripts and docs (default: the folder of this test file).
+    Root folder of the repository (default: three levels above this test file: deployments\acmp\tests\ -> root).
+    The scripts and docs are taken from the repository layout: Invoke-HostRename.ps1 in the root,
+    Test-DeploymentNetwork.ps1 and Update-ComputerCertificate.ps1 in components\, Invoke-AcmpHostRename.ps1 in
+    deployments\acmp\, the guides in deployments\acmp\docs\. They are copied flat into the simulated ACMP cache.
 
 .EXAMPLE
-    Invoke-Pester -Path .\HostRename.Simulation.Tests.ps1 -Output Detailed
+    Invoke-Pester -Path .\deployments\acmp\tests\HostRename.Simulation.Tests.ps1 -Output Detailed
 
 .NOTES
     Product          HostRename
@@ -73,16 +76,16 @@ param(
 )
 
 BeforeAll {
-    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { $PSScriptRoot }
+    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) }
     $script:Src = @{
         Invoke     = Join-Path $ScriptFolder 'Invoke-HostRename.ps1'
-        Gate       = Join-Path $ScriptFolder 'Test-DeploymentNetwork.ps1'
-        Cert       = Join-Path $ScriptFolder 'Update-ComputerCertificate.ps1'
-        Wrapper    = Join-Path $ScriptFolder 'Invoke-AcmpHostRename.ps1'
-        Guide      = Join-Path $ScriptFolder 'docs/acmp-guide.md'
-        Rollout    = Join-Path $ScriptFolder 'docs/acmp-rollout.md'
-        GuideDe    = Join-Path $ScriptFolder 'docs/de/acmp-anleitung.md'
-        RolloutDe  = Join-Path $ScriptFolder 'docs/de/acmp-rollout.md'
+        Gate       = Join-Path $ScriptFolder 'components/Test-DeploymentNetwork.ps1'
+        Cert       = Join-Path $ScriptFolder 'components/Update-ComputerCertificate.ps1'
+        Wrapper    = Join-Path $ScriptFolder 'deployments/acmp/Invoke-AcmpHostRename.ps1'
+        Guide      = Join-Path $ScriptFolder 'deployments/acmp/docs/acmp-guide.md'
+        Rollout    = Join-Path $ScriptFolder 'deployments/acmp/docs/acmp-rollout.md'
+        GuideDe    = Join-Path $ScriptFolder 'deployments/acmp/docs/de/acmp-anleitung.md'
+        RolloutDe  = Join-Path $ScriptFolder 'deployments/acmp/docs/de/acmp-rollout.md'
     }
     $script:ScriptVersion = [regex]::Match([System.IO.File]::ReadAllText($script:Src.Invoke), "(?m)^\`$ScriptVersion\s*=\s*'([^']+)'").Groups[1].Value
 
@@ -206,7 +209,7 @@ BeforeAll {
     function Get-SimState  { Get-SimRegKey 'HKLM:\SOFTWARE\HostRenameState' }
     function Get-SimMarker { Get-SimRegKey 'HKLM:\SOFTWARE\HostRename' }
 
-    # ---- Test certificates (same construction as HostRename.Certificate.Tests.ps1) --------------------------------
+    # ---- Test certificates (same construction as components/tests/HostRename.Certificate.Tests.ps1) --------------------------------
     function New-SimCertificate {
         param([string[]]$DnsName, [string]$TemplateName, [int]$NotAfterDays = 365)
         $key = [System.Security.Cryptography.ECDsa]::Create([System.Security.Cryptography.ECCurve+NamedCurves]::nistP256)

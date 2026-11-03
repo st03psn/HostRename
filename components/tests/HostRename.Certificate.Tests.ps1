@@ -18,10 +18,11 @@
       the template OID, Get-ExpectedDnsName (CIM) and Get-PendingComputerName (registry).
 
 .PARAMETER ScriptFolder
-    Folder containing the scripts (default: the folder of this test file).
+    Folder containing Update-ComputerCertificate.ps1 (default: the parent folder of the folder of this test file,
+    i.e. components\).
 
 .EXAMPLE
-    Invoke-Pester -Path .\HostRename.Certificate.Tests.ps1 -Output Detailed
+    Invoke-Pester -Path .\components\tests\HostRename.Certificate.Tests.ps1 -Output Detailed
 
 .NOTES
     Product          HostRename
@@ -40,7 +41,7 @@ param(
 )
 
 BeforeAll {
-    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { $PSScriptRoot }
+    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { Split-Path -Parent $PSScriptRoot }
     $script:CertScript = Join-Path $ScriptFolder 'Update-ComputerCertificate.ps1'
 
     # Load all functions of the script without running its body

@@ -80,7 +80,7 @@ Put these files into ACMP's file repository (verify in ACMP: where and how files
 | `Test-DeploymentNetwork.ps1` | network gate |
 | `Update-ComputerCertificate.ps1` | certificate renewal (only if WLAN devices are in scope) |
 
-The scripts are UTF-8 with BOM. Keep the encoding and do not edit them in the repository. The cleanup in ACMP mode never deletes the script file or its folder: the file belongs to ACMP's cache.
+All four files lie flat in one folder in the ACMP release package `HostRename-<version>-acmp.zip`; take them from there (in the source repository they live in `deployments/acmp/`, the root and `components/`). The scripts are UTF-8 with BOM. Keep the encoding and do not edit them in the repository. The cleanup in ACMP mode never deletes the script file or its folder: the file belongs to ACMP's cache.
 
 ## 3. Parameters per script
 

@@ -1,6 +1,6 @@
 # Roadmap: version 1.2.0 – ACMP as an alternative deployment method
 
-[Deutsche Version](de/roadmap.md) · Background: [development history](development-history.md), [ACMP deployment plan](acmp-deployment-plan.md)
+[Deutsche Version](de/roadmap.md) · Background: [development history](development-history.md), [ACMP deployment plan](../deployments/acmp/docs/acmp-deployment-plan.md)
 
 ## Goal
 
@@ -35,13 +35,13 @@ Each task gets the model it needs. Mechanical work goes to the cheapest model th
 
 ## Test phases
 
-Testing is part of the plan. Device tests cannot be planned in full upfront; the test plan ([test-plan.md](test-plan.md)) lists the cases, and its results feed back into code and documentation.
+Testing is part of the plan. Device tests cannot be planned in full upfront; the test plan ([test-plan.md](../deployments/acmp/docs/test-plan.md)) lists the cases, and its results feed back into code and documentation.
 
 | Phase | What | Where | Who |
 | --- | --- | --- | --- |
 | T1 | Syntax, Local tests, new Pester tests (mocks) | Linux sandbox (PowerShell 7) | Claude, automatic |
 | T2 | Same tests plus Windows-only Local tests, PSScriptAnalyzer | GitHub Actions `windows-latest` (Windows PowerShell 5.1 and 7) | CI, automatic on every push |
-| T3 | Device tests: gate on LAN/DA/WLAN/offline; rename over LAN and DA; WLAN behaviour before/after reboot and after certificate renewal; 802.1X on LAN ports; ACMP behaviour (exit codes, dialogs, duplicate client) | Test devices | Owner (following [test-plan.md](test-plan.md)) |
+| T3 | Device tests: gate on LAN/DA/WLAN/offline; rename over LAN and DA; WLAN behaviour before/after reboot and after certificate renewal; 802.1X on LAN ports; ACMP behaviour (exit codes, dialogs, duplicate client) | Test devices | Owner (following [test-plan.md](../deployments/acmp/docs/test-plan.md)) |
 | T4 | Dry run `-WhatIf` over ACMP on all ~700 devices, then clean up the findings | Production | Owner |
 | T5 | Rollout in waves: about 20 → about 100 → rest | Production | Owner |
 
@@ -73,4 +73,4 @@ Test status of the automated phases:
 - **T2 (GitHub Actions, Windows PowerShell 5.1 and 7):** green, including the Windows-only Local tests. The simulation is in the CI run list; its first CI run is still pending.
 - **Simulation (`HostRename.Simulation.Tests.ps1`, part of T1 and T2):** runs the real scripts and the documented state-check and status snippets chained like the ACMP Client Command across all phases (LAN, DirectAccess, WLAN with certificate renewal, waiting at the gate, no delegation, collision, unusable serial number, name already matching, 32-bit process, prepared log folder, GPO regression). The environment is simulated (registry in memory; CIM, AD, network, certificate store and CA mocked); the central log is not simulated. It shows that the scripts and the documented flow fit together; it is no substitute for the device tests in T3.
 
-**Next: T3 device tests by the owner** following [test-plan.md](test-plan.md). Nothing in 1.2.0 has run on a real domain client, DirectAccess, WLAN/AD CS or ACMP yet.
+**Next: T3 device tests by the owner** following [test-plan.md](../deployments/acmp/docs/test-plan.md). Nothing in 1.2.0 has run on a real domain client, DirectAccess, WLAN/AD CS or ACMP yet.

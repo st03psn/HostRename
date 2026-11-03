@@ -1,6 +1,6 @@
 # ACMP: deployment process and run verification
 
-[Deutsche Version](de/acmp-rollout.md) · Build guide: [acmp-guide.md](acmp-guide.md) · Device tests: [test-plan.md](test-plan.md) · Schedule: [roadmap.md](roadmap.md)
+[Deutsche Version](de/acmp-rollout.md) · Build guide: [acmp-guide.md](acmp-guide.md) · Device tests: [test-plan.md](test-plan.md) · Schedule: [roadmap.md](../../../docs/roadmap.md)
 
 As of: 3 November 2026 · Version 1.2.0
 

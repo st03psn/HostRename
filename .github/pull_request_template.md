@@ -9,7 +9,7 @@ Closes #
 ## Checklist / Checkliste
 
 - [ ] Parse check passes: all `*.ps1` files parse without errors / Parse-Prüfung: alle `*.ps1` ohne Fehler
-- [ ] AD-free Pester tests pass (`HostRename.Local.Tests.ps1`, `HostRename.Network.Tests.ps1`, `HostRename.Certificate.Tests.ps1`, `HostRename.Acmp.Tests.ps1`, `HostRename.Simulation.Tests.ps1`) / Pester-Tests ohne AD bestehen
+- [ ] AD-free Pester tests pass (`tests/HostRename.Local.Tests.ps1`, `components/tests/`, `deployments/acmp/tests/`) / Pester-Tests ohne AD bestehen
 - [ ] `Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error` reports no errors / keine Fehler
 - [ ] Tested on Windows PowerShell 5.1 where possible / Auf Windows PowerShell 5.1 getestet, soweit möglich
 - [ ] Files are UTF-8 with BOM (`.ps1`, `.psd1`) and LF line endings / Dateien UTF-8 mit BOM und LF-Zeilenenden

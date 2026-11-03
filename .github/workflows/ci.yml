@@ -84,13 +84,13 @@ jobs:
           # Windows PowerShell 5.1 loads the built-in Pester 3 by default; force the 5.x module.
           Import-Module Pester -MinimumVersion 5.3 -Force
           $config = New-PesterConfiguration
-          # Dc and Client tests need a real AD/GPO environment and HostRename.Checks.psd1: not run here.
+          # Dc and Client tests (tests/) need a real AD/GPO environment and HostRename.Checks.psd1: not run here.
           $config.Run.Path = @(
-              'HostRename.Local.Tests.ps1',
-              'HostRename.Network.Tests.ps1',
-              'HostRename.Certificate.Tests.ps1',
-              'HostRename.Acmp.Tests.ps1',
-              'HostRename.Simulation.Tests.ps1'
+              'tests/HostRename.Local.Tests.ps1',
+              'components/tests/HostRename.Network.Tests.ps1',
+              'components/tests/HostRename.Certificate.Tests.ps1',
+              'deployments/acmp/tests/HostRename.Acmp.Tests.ps1',
+              'deployments/acmp/tests/HostRename.Simulation.Tests.ps1'
           )
           $config.Run.Exit = $true
           $config.Output.Verbosity = 'Detailed'

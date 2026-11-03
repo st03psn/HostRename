@@ -88,7 +88,7 @@
     Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)
 
 .LINK
-    docs/acmp-deployment-plan.md
+    README.md
 #>
 #Requires -Version 5.1
 [CmdletBinding(SupportsShouldProcess = $true)]

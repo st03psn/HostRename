@@ -4,9 +4,11 @@
 
 .DESCRIPTION
     Runs the real scripts as a whole (Invoke-HostRename.ps1, Test-DeploymentNetwork.ps1,
-    Update-ComputerCertificate.ps1) and the two documented snippets (state check from docs/acmp-guide.md, section 4,
-    step 1, and status script from docs/acmp-rollout.md, section 4.3; both are extracted from the Markdown at test
-    time), chained like the ACMP Client Command in docs/acmp-guide.md, section 4, across all phases of a device.
+    Update-ComputerCertificate.ps1) and the two documented snippets (state check from docs/acmp-guide.md,
+    section 4, step 1, and status script from docs/acmp-rollout.md, section 4.3; both are extracted from the
+    Markdown at test time), chained like the ACMP Client Command in docs/acmp-guide.md, section 4, across all
+    phases of a device. The wrapper Invoke-AcmpHostRename.ps1, which implements that Client Command in one
+    script run, is run the same way (scenarios W1 to W9).
 
     The environment is simulated: registry (HKLM, in memory), computer name (active and pending), CIM classes
     (domain, serial numbers), AD (computer objects, delegation), network paths (LAN, DirectAccess, corporate WLAN,
@@ -34,6 +36,19 @@
       S10 GPO regression: -Deployment Gpo removes task and script copy, Acmp never does
       S11 32-bit process on 64-bit Windows (PLATFORM, nothing written)
       S12 local folder prepared by a standard user (LOCAL_DIR), then removed by an administrator
+
+      Wrapper Invoke-AcmpHostRename.ps1 (the whole Client Command in one script run per ACMP invocation;
+      every run checks the summary line HOSTRENAME PHASE=... EXIT=... STEP=... MESSAGE="..." as the last line):
+      W1  LAN: dry run, 3010, 3010 again before the reboot, reboot, 0 done (marker), then 0 at the state check
+      W2  corporate WLAN only (20, lists as one string each), then cable (3010)
+      W3  offline (21)
+      W4  no delegation (4), rerun 4 at the state check (permanent), release + delegation -> 3010
+      W5  WLAN user with -CertificateTemplate: CA denies (1, no cleanup), then RENEWED and cleanup (0)
+      W6  name already matches the template (0, cleanup in the same run)
+      W7  parameter errors (log choice missing, blank or twice; -RemoveOldCertificates alone), missing script
+      W8  32-bit process on 64-bit Windows (PLATFORM, nothing runs or is written)
+      W9  -WhatIf after the reboot with certificate template (nothing written, no certificate, no cleanup)
+      plus structural checks of the wrapper (parses, single exit point, scripts it calls)
 
 .PARAMETER ScriptFolder
     Folder containing the scripts and docs (default: the folder of this test file).
@@ -63,6 +78,7 @@ BeforeAll {
         Invoke     = Join-Path $ScriptFolder 'Invoke-HostRename.ps1'
         Gate       = Join-Path $ScriptFolder 'Test-DeploymentNetwork.ps1'
         Cert       = Join-Path $ScriptFolder 'Update-ComputerCertificate.ps1'
+        Wrapper    = Join-Path $ScriptFolder 'Invoke-AcmpHostRename.ps1'
         Guide      = Join-Path $ScriptFolder 'docs/acmp-guide.md'
         Rollout    = Join-Path $ScriptFolder 'docs/acmp-rollout.md'
         GuideDe    = Join-Path $ScriptFolder 'docs/de/acmp-anleitung.md'
@@ -230,12 +246,14 @@ BeforeAll {
             Invoke     = Join-Path $cache 'Invoke-HostRename.ps1'
             Gate       = Join-Path $cache 'Test-DeploymentNetwork.ps1'
             Cert       = Join-Path $cache 'Update-ComputerCertificate.ps1'
+            Wrapper    = Join-Path $cache 'Invoke-AcmpHostRename.ps1'
             StateCheck = Join-Path $cache 'StateCheck.ps1'
             Status     = Join-Path $cache 'Status.ps1'
         }
         [System.IO.File]::Copy($script:Src.Invoke, $paths.Invoke, $true)
         [System.IO.File]::Copy($script:Src.Gate, $paths.Gate, $true)
         [System.IO.File]::Copy($script:Src.Cert, $paths.Cert, $true)
+        [System.IO.File]::Copy($script:Src.Wrapper, $paths.Wrapper, $true)
         $utf8Bom = New-Object System.Text.UTF8Encoding($true)
         [System.IO.File]::WriteAllText($paths.StateCheck, $script:StateCheckCode, $utf8Bom)
         [System.IO.File]::WriteAllText($paths.Status, $script:StatusCode, $utf8Bom)
@@ -259,7 +277,7 @@ BeforeAll {
             Device        = @{
                 Domain = $Domain; BiosSerial = $BiosSerial; ProductSerial = $ProductSerial; BoardSerial = $BoardSerial
                 Uuid = '4C4C4544-0053-4D10-8031-B1C04F4D5832'; Delegation = $Delegation; SecureChannel = $true
-                Wow64 = $false; FolderOwner = 'S-1-5-18'
+                Wow64 = $false; FolderOwner = 'S-1-5-18'; CaDenied = $false
             }
             Ad            = $ad
             Net           = $null
@@ -392,6 +410,24 @@ BeforeAll {
         }
         $run.Status = Invoke-SimStatus
         $run
+    }
+
+    function Invoke-SimWrapper {
+        # Runs Invoke-AcmpHostRename.ps1 (the whole Client Command in one run) like powershell.exe -File would.
+        # Checks that the last line is the summary line and that its EXIT matches the exit code.
+        # Ran = the steps whose script the wrapper started ("HOSTRENAME STEP=<step> RUN=<script>" lines).
+        param([hashtable]$Parameters = @{})
+        $r = Invoke-SimScript -Path $global:HRSim.Paths.Wrapper -Parameters $Parameters
+        $last = if ($r.Output.Count) { [string]$r.Output[$r.Output.Count - 1] } else { '' }
+        $m = [regex]::Match($last, '^HOSTRENAME PHASE=(\w+) EXIT=(\d+) STEP=(\w+) MESSAGE="([^"]*)"$')
+        if (-not $m.Success) { throw "Wrapper: the last line is not the summary line: '$last'`n$($r.Text)" }
+        if ([int]$m.Groups[2].Value -ne $r.ExitCode) { throw "Wrapper: summary EXIT=$($m.Groups[2].Value) but exit code $($r.ExitCode)" }
+        $ran = @($r.Output | ForEach-Object { $x = [regex]::Match($_, '^HOSTRENAME STEP=(\w+) RUN=(\S+)$'); if ($x.Success) { $x.Groups[1].Value } })
+        $r | Add-Member -NotePropertyName Summary -NotePropertyValue $last
+        $r | Add-Member -NotePropertyName Phase -NotePropertyValue $m.Groups[1].Value
+        $r | Add-Member -NotePropertyName Step -NotePropertyValue $m.Groups[3].Value
+        $r | Add-Member -NotePropertyName Message -NotePropertyValue $m.Groups[4].Value
+        $r | Add-Member -NotePropertyName Ran -NotePropertyValue $ran -PassThru
     }
 
     function Get-SimLocalLog {
@@ -548,8 +584,9 @@ BeforeAll {
     }
     Mock Resolve-TemplateOid { $null }
     Mock Request-TemplateCertificate {
-        # The CA issues a certificate for the current DNS host name of the device
+        # The CA issues a certificate for the current DNS host name of the device (or denies it: Device.CaDenied)
         $global:HRSim.CertRequests.Add($Template)
+        if ($global:HRSim.Device.CaDenied) { return [pscustomobject]@{ Status = 'Denied'; Certificate = $null; Message = 'Denied by the simulated CA.' } }
         $active = (Get-SimActiveName).ToLowerInvariant()
         $c = New-SimCertificate -DnsName "$active.$($global:HRSim.Device.Domain)", $active -TemplateName $Template
         $global:HRSim.Certs.Add($c)
@@ -1049,5 +1086,310 @@ Describe 'S12 local folder prepared by a standard user (LOCAL_DIR)' {
         $run = Invoke-SimulatedClientCommand -RenameParameters @{ NameTemplate = 'DE{Serial}'; NoCentralLog = $true }
         $run.Outcome | Should -Be 'RebootRequired'
         $global:HRSim.AclCalls | Should -Contain $global:HRSim.LocalDir
+    }
+}
+
+# ---- Wrapper Invoke-AcmpHostRename.ps1: the whole Client Command in one script run per ACMP invocation ----------
+
+Describe 'Wrapper structure (Invoke-AcmpHostRename.ps1)' {
+    BeforeAll {
+        $tk = $null; $er = $null
+        $script:WrapperAst = [System.Management.Automation.Language.Parser]::ParseFile($script:Src.Wrapper, [ref]$tk, [ref]$er)
+        $script:WrapperErrors = $er
+    }
+
+    It 'parses without errors' {
+        @($script:WrapperErrors).Count | Should -Be 0
+    }
+    It 'has exactly one exit statement, inside its own exit point Exit-AcmpHostRename' {
+        $exits = @($script:WrapperAst.FindAll({ param($a) $a -is [System.Management.Automation.Language.ExitStatementAst] }, $true))
+        $exits.Count | Should -Be 1
+        $p = $exits[0].Parent
+        while ($p -and $p -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $p = $p.Parent }
+        $p.Name | Should -Be 'Exit-AcmpHostRename'
+    }
+    It 'ends with the call of the exit point (after the try/catch around the flow)' {
+        $last = $script:WrapperAst.EndBlock.Statements[$script:WrapperAst.EndBlock.Statements.Count - 1]
+        $last.Extent.Text | Should -Be 'Exit-AcmpHostRename'
+        $prev = $script:WrapperAst.EndBlock.Statements[$script:WrapperAst.EndBlock.Statements.Count - 2]
+        $prev | Should -BeOfType ([System.Management.Automation.Language.TryStatementAst])
+    }
+    It 'calls only the three existing scripts, by name from its own folder' {
+        $text = [System.IO.File]::ReadAllText($script:Src.Wrapper)
+        $called = @([regex]::Matches($text, "Invoke-AcmpSubScript '([^']+)'") | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        $called | Should -Be @('Invoke-HostRename.ps1', 'Test-DeploymentNetwork.ps1', 'Update-ComputerCertificate.ps1')
+        $text | Should -Match 'Join-Path \$PSScriptRoot \$AcmpScript'
+    }
+    It 'the command lines in acmp-guide ("Recommended: the wrapper") use only its parameters, and the German guide has the same code' {
+        $en = Get-MarkdownCodeBlock -Path $script:Src.Guide -Heading 'Recommended: the wrapper'
+        $de = Get-MarkdownCodeBlock -Path $script:Src.GuideDe -Heading 'Empfohlen: der Wrapper'
+        Remove-CodeComment $de | Should -BeExactly (Remove-CodeComment $en)
+        $known = @($script:WrapperAst.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }) + 'WhatIf'
+        $lines = @($en -split '\r?\n' | Where-Object { $_ -notmatch '^\s*#' -and $_ -match 'Invoke-AcmpHostRename\.ps1' })
+        $lines.Count | Should -BeGreaterThan 1
+        foreach ($l in $lines) {
+            $tail = $l.Substring($l.IndexOf('Invoke-AcmpHostRename.ps1'))
+            foreach ($m in [regex]::Matches($tail, '(?<=\s)-(\w+)')) { $known | Should -Contain $m.Groups[1].Value }
+            $tail | Should -Match '-NoCentralLog|-CentralLogPath'
+        }
+    }
+    It 'does not set $ErrorActionPreference (the called scripts run in its process and would inherit it)' {
+        $assign = @($script:WrapperAst.FindAll({ param($a) $a -is [System.Management.Automation.Language.AssignmentStatementAst] -and $a.Left.Extent.Text -match 'ErrorActionPreference' }, $true))
+        $assign.Count | Should -Be 0
+    }
+}
+
+Describe 'W1 wrapper, LAN device: full flow over several invocations' {
+    BeforeAll {
+        New-SimDevice -Root (Join-Path $TestDrive 'W1') -Network Lan
+        $script:P = @{ NameTemplate = 'DE{Serial}'; NoCentralLog = $true; CorporateSsid = 'CORP-WLAN' }
+    }
+
+    It 'dry run (-WhatIf): exit 0, PHASE=DryRun with the target name, nothing written' {
+        $r = Invoke-SimWrapper -Parameters ($script:P + @{ WhatIf = $true })
+        $r.ExitCode | Should -Be 0
+        $r.Summary | Should -Match "^HOSTRENAME PHASE=DryRun EXIT=0 STEP=Rename MESSAGE=`"Dry run \(phase rename\): 'PC349219' would be renamed to 'DESIM4711AB'"
+        $r.Ran | Should -Be @('Gate', 'Rename')
+        $r.Text | Should -Match '(?m)^RESULT=LAN EXIT=0 '
+        $global:HRSim.RegWrites | Should -Be 0
+        $global:HRSim.RenameCalls.Count | Should -Be 0
+        [System.IO.Directory]::Exists($global:HRSim.LocalDir) | Should -BeFalse
+    }
+    It 'run 1: gate, rename, exit 3010 (PHASE=RebootRequired), no cleanup' {
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 3010
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=RebootRequired EXIT=3010 STEP=Rename '
+        $r.Ran | Should -Be @('Gate', 'Rename')
+        $r.Text | Should -Match "RENAMED: Successfully renamed: 'PC349219' -> 'DESIM4711AB'"
+        Get-SimPendingName | Should -Be 'DESIM4711AB'
+        Get-SimMarker | Should -BeNullOrEmpty
+        $global:HRSim.ShutdownCalls.Count | Should -Be 0
+    }
+    It 'run 2 before the reboot: 3010 again (PENDING_REBOOT), no second rename' {
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 3010
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=RebootRequired EXIT=3010 STEP=Rename '
+        $r.Text | Should -Match 'PENDING_REBOOT'
+        $global:HRSim.RenameCalls.Count | Should -Be 1
+    }
+    It 'run 3 after the reboot: gate, cleanup, exit 0 (PHASE=Done), marker set' {
+        Invoke-SimulatedReboot
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 0
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Done EXIT=0 STEP=Cleanup MESSAGE="Cleanup done'
+        $r.Ran | Should -Be @('Gate', 'Cleanup')
+        $r.Text | Should -Match 'CLEANUP_DONE'
+        (Get-SimMarker).ComputerName | Should -Be 'DESIM4711AB'
+        (Get-SimState).LastExitCode | Should -Be 0
+        [System.IO.File]::Exists($global:HRSim.Paths.Wrapper) | Should -BeTrue
+        [System.IO.File]::Exists($global:HRSim.Paths.Invoke) | Should -BeTrue
+        (Invoke-SimStatus).Phase | Should -Be 'Done'
+    }
+    It 'run 4: exit 0 at the state check (PHASE=Done), no script runs, nothing written' {
+        $writes = $global:HRSim.RegWrites
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 0
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Done EXIT=0 STEP=StateCheck '
+        @($r.Ran).Count | Should -Be 0
+        $r.Output.Count | Should -Be 1 -Because 'only the summary line is printed'
+        $global:HRSim.RegWrites | Should -Be $writes
+        $global:HRSim.RenameCalls.Count | Should -Be 1
+    }
+}
+
+Describe 'W2 wrapper, corporate WLAN only, then cable' {
+    BeforeAll {
+        New-SimDevice -Root (Join-Path $TestDrive 'W2') -Network CorpWlan
+        # Lists as powershell.exe -File passes them: one string each
+        $script:P = @{ NameTemplate = 'DE{Serial}'; NoCentralLog = $true; Allow = 'Lan,DirectAccess'; CorporateSsid = 'CORP-WLAN,CORP-WLAN-5G' }
+    }
+
+    It 'exit 20 (PHASE=Gate, LAN cable), Invoke-HostRename never runs, nothing written' {
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 20
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Gate EXIT=20 STEP=Gate MESSAGE="Gate RESULT=WLAN: only the corporate WLAN: ask the user to connect a LAN cable'
+        $r.Ran | Should -Be @('Gate')
+        $r.Text | Should -Match '(?m)^RESULT=WLAN EXIT=20 .*ALLOW=Lan,DirectAccess '
+        $global:HRSim.RegWrites | Should -Be 0
+        Get-SimState | Should -BeNullOrEmpty
+    }
+    It 'with the cable plugged in, the next run renames (3010)' {
+        Set-SimNetwork -Path Lan
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 3010
+        $r.Phase | Should -Be 'RebootRequired'
+        $global:HRSim.RenameCalls | Should -Be @('DESIM4711AB')
+    }
+}
+
+Describe 'W3 wrapper, offline (home network without DirectAccess)' {
+    BeforeAll { New-SimDevice -Root (Join-Path $TestDrive 'W3') -Network Offline }
+
+    It 'exit 21 (PHASE=Gate), silent, nothing written' {
+        $r = Invoke-SimWrapper -Parameters @{ NameTemplate = 'DE{Serial}'; NoCentralLog = $true; CorporateSsid = 'CORP-WLAN' }
+        $r.ExitCode | Should -Be 21
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Gate EXIT=21 STEP=Gate MESSAGE="Gate RESULT=NONE: no domain connection'
+        $r.Ran | Should -Be @('Gate')
+        $global:HRSim.RegWrites | Should -Be 0
+        $global:HRSim.RenameCalls.Count | Should -Be 0
+    }
+}
+
+Describe 'W4 wrapper, no delegation: permanent, then release' {
+    BeforeAll {
+        New-SimDevice -Root (Join-Path $TestDrive 'W4') -Delegation $false
+        $script:P = @{ NameTemplate = 'DE{Serial}'; NoCentralLog = $true }
+    }
+
+    It 'exit 4 (PHASE=Permanent, STEP=Rename), LastExitCode 4 stored, no rename' {
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 4
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Permanent EXIT=4 STEP=Rename '
+        $r.Text | Should -Match 'PERM_DENIED'
+        (Get-SimState).LastExitCode | Should -Be 4
+        $global:HRSim.RenameCalls.Count | Should -Be 0
+    }
+    It 'rerun: exit 4 at the state check, no gate, no rename, nothing written' {
+        $writes = $global:HRSim.RegWrites
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 4
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Permanent EXIT=4 STEP=StateCheck MESSAGE="Permanent error from an earlier run \(LastExitCode 4\)'
+        @($r.Ran).Count | Should -Be 0
+        $global:HRSim.RegWrites | Should -Be $writes
+    }
+    It 'release (LastExitCode removed) after the delegation is granted: the next run renames (3010)' {
+        $global:HRSim.Registry['HKLM:\SOFTWARE\HostRenameState'].Remove('LastExitCode')   # = the documented release
+        $global:HRSim.Device.Delegation = $true
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 3010
+        $r.Ran | Should -Be @('Gate', 'Rename')
+        $global:HRSim.RenameCalls | Should -Be @('DESIM4711AB')
+    }
+}
+
+Describe 'W5 wrapper, WLAN user with -CertificateTemplate' {
+    BeforeAll {
+        New-SimDevice -Root (Join-Path $TestDrive 'W5') -Network Lan
+        $global:HRSim.Certs.Add((New-SimCertificate -DnsName 'pc349219.sim.invalid', 'pc349219' -TemplateName 'SimWlanMachine' -NotAfterDays 300))
+        $script:OldThumb = $global:HRSim.Certs[0].Thumbprint
+        $script:P = @{ NameTemplate = 'DE{Serial}'; NoCentralLog = $true; CorporateSsid = 'CORP-WLAN'; CertificateTemplate = 'SimWlanMachine'; RemoveOldCertificates = $true }
+    }
+
+    It 'run 1 on LAN: rename 3010, the certificate step does not run before the reboot' {
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 3010
+        $r.Ran | Should -Be @('Gate', 'Rename')
+        $global:HRSim.CertRequests.Count | Should -Be 0
+    }
+    It 'after the reboot, CA denies: exit 1 (PHASE=Certificate), no cleanup, marker not set' {
+        Invoke-SimulatedReboot
+        $global:HRSim.Device.CaDenied = $true
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 1
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Certificate EXIT=1 STEP=Certificate MESSAGE="Certificate RESULT=ERROR: not renewed; no cleanup'
+        $r.Ran | Should -Be @('Gate', 'Certificate')
+        Get-SimMarker | Should -BeNullOrEmpty
+        $global:HRSim.CertRemovals.Count | Should -Be 0
+    }
+    It 'next run: certificate RENEWED (old one removed), then cleanup, exit 0 (PHASE=Done)' {
+        $global:HRSim.Device.CaDenied = $false
+        $r = Invoke-SimWrapper -Parameters $script:P
+        $r.ExitCode | Should -Be 0
+        $r.Ran | Should -Be @('Gate', 'Certificate', 'Cleanup')
+        $r.Text | Should -Match '(?m)^RESULT=RENEWED EXIT=0 TEMPLATE=SimWlanMachine DNS=desim4711ab.sim.invalid .*REMOVED=1 '
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Done EXIT=0 STEP=Cleanup '
+        $global:HRSim.CertRemovals | Should -Be @($script:OldThumb)
+        (Get-SimMarker).ComputerName | Should -Be 'DESIM4711AB'
+    }
+}
+
+Describe 'W6 wrapper, name already matches the template' {
+    BeforeAll { New-SimDevice -Root (Join-Path $TestDrive 'W6') -Name 'DESIM4711AB' }
+
+    It 'exit 0 with the cleanup in the same run (marker set), no reboot' {
+        $r = Invoke-SimWrapper -Parameters @{ NameTemplate = 'DE{Serial}'; NoCentralLog = $true }
+        $r.ExitCode | Should -Be 0
+        $r.Ran | Should -Be @('Gate', 'Rename', 'Cleanup')
+        $r.Text | Should -Match 'ALREADY_DONE'
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Done EXIT=0 STEP=Cleanup '
+        (Get-SimMarker).ComputerName | Should -Be 'DESIM4711AB'
+        $global:HRSim.RenameCalls.Count | Should -Be 0
+    }
+}
+
+Describe 'W7 wrapper, parameter errors and a missing script' {
+    BeforeAll { New-SimDevice -Root (Join-Path $TestDrive 'W7') }
+
+    It 'neither -NoCentralLog nor -CentralLogPath: exit 1 (PHASE=Error, STEP=Parameters), nothing runs' {
+        $r = Invoke-SimWrapper -Parameters @{ NameTemplate = 'DE{Serial}' }
+        $r.ExitCode | Should -Be 1
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Error EXIT=1 STEP=Parameters MESSAGE="Pass exactly one of -NoCentralLog or -CentralLogPath'
+        @($r.Ran).Count | Should -Be 0
+        $global:HRSim.RegWrites | Should -Be 0
+    }
+    It 'a blank -CentralLogPath or the literal two quote characters count as missing' {
+        foreach ($v in ' ', "''", '""') {
+            $r = Invoke-SimWrapper -Parameters @{ NameTemplate = 'DE{Serial}'; CentralLogPath = $v }
+            $r.ExitCode | Should -Be 1
+            $r.Step | Should -Be 'Parameters'
+        }
+    }
+    It 'both -NoCentralLog and -CentralLogPath: exit 1' {
+        $r = Invoke-SimWrapper -Parameters @{ NameTemplate = 'DE{Serial}'; NoCentralLog = $true; CentralLogPath = '\\server\share\log.csv' }
+        $r.ExitCode | Should -Be 1
+        $r.Message | Should -Match 'both were given'
+        @($r.Ran).Count | Should -Be 0
+    }
+    It '-RemoveOldCertificates without -CertificateTemplate: exit 1' {
+        $r = Invoke-SimWrapper -Parameters @{ NameTemplate = 'DE{Serial}'; NoCentralLog = $true; RemoveOldCertificates = $true }
+        $r.ExitCode | Should -Be 1
+        $r.Step | Should -Be 'Parameters'
+    }
+    It 'a script missing next to the wrapper: exit 1 (PHASE=Error) with the summary line, nothing written' {
+        [System.IO.File]::Delete($global:HRSim.Paths.Gate)
+        $r = Invoke-SimWrapper -Parameters @{ NameTemplate = 'DE{Serial}'; NoCentralLog = $true }
+        $r.ExitCode | Should -Be 1
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Error EXIT=1 STEP=Gate MESSAGE="Unexpected error in step Gate: Test-DeploymentNetwork.ps1 not found'
+        $global:HRSim.RegWrites | Should -Be 0
+    }
+}
+
+Describe 'W8 wrapper, 32-bit PowerShell on 64-bit Windows' {
+    BeforeAll {
+        New-SimDevice -Root (Join-Path $TestDrive 'W8')
+        $global:HRSim.Device.Wow64 = $true
+    }
+
+    It 'exit 1 with [ERROR] PLATFORM before anything else; no script runs, nothing written' {
+        # also without the log choice: the platform check comes first
+        $r = Invoke-SimWrapper -Parameters @{ NameTemplate = 'DE{Serial}' }
+        $r.ExitCode | Should -Be 1
+        $r.Text | Should -Match '\[ERROR\] PLATFORM: .*Sysnative'
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=Error EXIT=1 STEP=Platform '
+        @($r.Ran).Count | Should -Be 0
+        $global:HRSim.RegWrites | Should -Be 0
+        [System.IO.Directory]::Exists($global:HRSim.LocalDir) | Should -BeFalse
+    }
+}
+
+Describe 'W9 wrapper, -WhatIf writes nothing (also after the reboot, with certificate template)' {
+    BeforeAll {
+        New-SimDevice -Root (Join-Path $TestDrive 'W9') -Network Lan
+        $script:P = @{ NameTemplate = 'DE{Serial}'; NoCentralLog = $true; CertificateTemplate = 'SimWlanMachine' }
+    }
+
+    It 'after a rename and reboot: dry run exit 0 (PHASE=DryRun, phase after reboot), no certificate, no cleanup, nothing written' {
+        (Invoke-SimWrapper -Parameters $script:P).ExitCode | Should -Be 3010
+        Invoke-SimulatedReboot
+        $writes = $global:HRSim.RegWrites
+        $logLines = @(Get-SimLocalLog).Count
+        $r = Invoke-SimWrapper -Parameters ($script:P + @{ WhatIf = $true })
+        $r.ExitCode | Should -Be 0
+        $r.Summary | Should -Match '^HOSTRENAME PHASE=DryRun EXIT=0 STEP=Rename MESSAGE="Dry run \(phase after reboot\)'
+        $r.Ran | Should -Be @('Gate', 'Rename')
+        $global:HRSim.RegWrites | Should -Be $writes
+        @(Get-SimLocalLog).Count | Should -Be $logLines
+        $global:HRSim.CertRequests.Count | Should -Be 0
+        Get-SimMarker | Should -BeNullOrEmpty
     }
 }

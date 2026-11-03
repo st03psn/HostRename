@@ -33,10 +33,10 @@ Use three Client Commands so that inventory, dry run and the real run are clearl
 | Client Command | Purpose | Changes the device | Content |
 | --- | --- | --- | --- |
 | **HostRename – Status** | collect the state into custom fields | no | read-only script (section 4.2), runs on all devices in scope, including after completion |
-| **HostRename – Dry run** | phase 3 | no | gate + `Invoke-HostRename.ps1 -Deployment Acmp ... -WhatIf` |
-| **HostRename – Rename** | phases 4–5 | yes | full flow of [acmp-guide.md](acmp-guide.md), section 4: state check, gate, rename, reboot dialog, after the reboot gate, certificate, cleanup |
+| **HostRename – Dry run** | phase 3 | no | `Invoke-AcmpHostRename.ps1 ... -WhatIf` (gate + `Invoke-HostRename.ps1 -WhatIf`, writes nothing); no dialogs |
+| **HostRename – Rename** | phases 4–5 | yes | `Invoke-AcmpHostRename.ps1 ...`: the wrapper runs the full flow of [acmp-guide.md](acmp-guide.md), section 4 (state check, gate, rename, after the reboot gate, certificate, cleanup) in one run; the Client Command shows the reboot dialog on exit code 3010 and the LAN cable dialog on 20 (see [acmp-guide.md](acmp-guide.md), "Recommended: the wrapper") |
 
-All three use **the same parameters** (template, `-NoCentralLog` or `-CentralLogPath`, `-CorporateSsid`). A different template triggers a new rename.
+Dry run and Rename call the wrapper with **the same parameters** (template, `-NoCentralLog` or `-CentralLogPath`, `-CorporateSsid`, for WLAN devices `-CertificateTemplate`); the dry run adds only `-WhatIf`. A different template triggers a new rename.
 
 Version the Client Commands, for example by putting the script version in the name or description. Change a Client Command only between waves.
 
@@ -86,7 +86,7 @@ Static containers control **who** gets the Client Command. Dynamic containers bu
 ### Phase 0: prepare
 
 1. Set the delegation (see [acmp-guide.md](acmp-guide.md), section 1). For a central log, also create the share.
-2. Put `Invoke-HostRename.ps1`, `Test-DeploymentNetwork.ps1` and, for WLAN devices, `Update-ComputerCertificate.ps1` unchanged into the ACMP file repository.
+2. Put `Invoke-AcmpHostRename.ps1`, `Invoke-HostRename.ps1`, `Test-DeploymentNetwork.ps1` and `Update-ComputerCertificate.ps1` (used only with `-CertificateTemplate`) unchanged into the ACMP file repository.
 3. Define the custom fields (section 2.2) and the containers (section 2.3).
 4. Fix the parameters: template, central log or not, corporate SSID, certificate template name. Use them identically in all Client Commands.
 5. Make sure the HostRename GPO is not linked to these OUs.
@@ -152,7 +152,7 @@ Check from top to bottom. A run is OK only when all levels that apply agree.
 | after reboot | 3010 or 0 | new | – | new | gate 0 | certificate (WLAN devices), cleanup |
 | done | 0 | new (empty if the name already matched the template) | exists (`ComputerName` = new) | new | step 1 ends the run | none |
 | retry | 1 | maybe | – | maybe | error in the job | automatic on next run; after several failures check the log |
-| permanent | 2, 4 or 5 | – | – | old | Client Command ends at step 1 (`phase=permanent`) on every run | manual action: fix the cause, then release the device by deleting `LastExitCode` (see [acmp-guide.md](acmp-guide.md), section 4) |
+| permanent | 2, 4 or 5 | – | – | old | Client Command ends at step 1 on every run (wrapper: exit 2, 4 or 5 with `PHASE=Permanent STEP=StateCheck`; individual steps: `phase=permanent`) | manual action: fix the cause, then release the device by deleting `LastExitCode` (see [acmp-guide.md](acmp-guide.md), section 4) |
 
 ### 4.3 Status script for the Client Command "HostRename – Status"
 
@@ -209,7 +209,7 @@ Fill in the "Result" column (OK, or deviation with a short note). Verification u
 
 | ID | Test | Steps in ACMP | Expected result | Check | Result |
 | --- | --- | --- | --- | --- | --- |
-| AC-A1 | File transfer | Client Command copies the three scripts from the file repository and runs `Get-FileHash` on them | files present, hashes identical to the repository, BOM intact | L1 | |
+| AC-A1 | File transfer | Client Command copies the four scripts from the file repository and runs `Get-FileHash` on them | files present, hashes identical to the repository, BOM intact | L1 | |
 | AC-A2 | 64-bit | script step `[Environment]::Is64BitProcess` | `True`; if `False`, use `%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe` and repeat | L1 | |
 | AC-A3 | Exit codes | script steps with `exit 0`, `1`, `5`, `20`, `3010` | each code arrives unchanged and can be used in a condition; note how 3010 is treated (test-plan A1, A2) | L1 | |
 | AC-A4 | Output | run `Test-DeploymentNetwork.ps1` | the summary line is visible in the job history | L1 | |
@@ -236,8 +236,8 @@ Fill in the "Result" column (OK, or deviation with a short note). Verification u
 
 | ID | Situation | How to create it | Expected result | Check | Result |
 | --- | --- | --- | --- | --- | --- |
-| AC-C1 | No permission | test device in an OU without delegation | exit 4 (`PERM_DENIED`), no rename, container `HR-Permanent`; reruns end at step 1 with `phase=permanent` (no gate, no script); after fixing the delegation and deleting `LastExitCode` the next run proceeds and renames | L1–L3 | |
-| AC-C2 | Name too long | test template that is too long with `-OnTooLong Skip` | exit 2, no rename, `HR-Permanent`; reruns end at step 1 with `phase=permanent`; after release (`LastExitCode` deleted) the run proceeds again | L1–L3 | |
+| AC-C1 | No permission | test device in an OU without delegation | exit 4 (`PERM_DENIED`), no rename, container `HR-Permanent`; reruns end at step 1 (wrapper: exit 4, `PHASE=Permanent STEP=StateCheck`; individual steps: `phase=permanent`), no gate, no script; after fixing the delegation and deleting `LastExitCode` the next run proceeds and renames | L1–L3 | |
+| AC-C2 | Name too long | test template that is too long with `-OnTooLong Skip` | exit 2, no rename, `HR-Permanent`; reruns end at step 1 (wrapper: exit 2, `PHASE=Permanent STEP=StateCheck`; individual steps: `phase=permanent`); after release (`LastExitCode` deleted) the run proceeds again | L1–L3 | |
 | AC-C3 | Reboot postponed | postpone the reboot dialog up to the deadline | reboot at the latest at the deadline; until then reruns give 3010 (`PENDING_REBOOT`) | L1, L3 | |
 | AC-C4 | Cable unplugged before the reboot | after 3010 unplug the cable, use WLAN | note: does WLAN still work until the reboot (test-plan W1)? After the reboot the device waits at gate 20 until a cable is connected | L1, L3, L6 | |
 | AC-C5 | Device offline after the rename | after 3010 take the device offline for a day | the next run continues with the after-reboot phase; nothing is renamed twice | L1–L3 | |

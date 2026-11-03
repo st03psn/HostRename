@@ -1,72 +1,72 @@
 ﻿<#
 .SYNOPSIS
-    HostRename - Client-Tests: prüft aus Sicht des Pilotgeräts, was sich ohne echtes AD nicht klären ließ.
+    HostRename - client tests: checks from the pilot device's point of view what could not be clarified without a real AD.
 
 .DESCRIPTION
-    Als lokaler Administrator auf dem Pilotgerät ausführen. Alles, was "als Computer" gelten muss, läuft in
-    einem temporären Scheduled Task als SYSTEM (= Computerkonto im Netzwerk).
+    Run as local administrator on the pilot device. Everything that has to count as "the computer" runs in
+    a temporary scheduled task as SYSTEM (= computer account on the network).
 
-    PRÜFT
-      1. SYSTEM-Kontext: Domänenmitglied, Secure Channel
-      2. Berechtigung zum Umbenennen: führt die echte Funktion Test-AdRenamePermission aus
-         Invoke-HostRename.ps1 im SYSTEM-Kontext aus und zeigt, welche Attribute das Computerkonto
-         schreiben darf
-      3. Namensvorlage: Vorschau des Zielnamens für dieses Gerät (Seriennummer oder Zukunfts-ID, Kürzung)
-         mit den echten Funktionen aus Invoke-HostRename.ps1, ohne etwas zu ändern
-      4. Log-Share: Kann das Computerkonto anfügen? (schreibt eine Testdatei pester-write-test-<PC>.csv)
-      5. Quell-Share: Kann das Computerkonto das Skript lesen und nicht ändern?
-      6. GPO: wird per gpresult auf diesem Gerät angewendet
-      7. Deployment-Zustand
-           PreRun    vor dem ersten Lauf: Skript kopiert, Task korrekt aus der GPP erzeugt, Trigger,
-                     lokaler Ordner nicht für Benutzer beschreibbar
-           PostRun   nach Umbenennung und Neustart: Name nach Vorlage, AD-Objekt, Marker, Task und Skript
-                     entfernt, zentrale Logs vollständig, lokale Logdateien und Ordner entfernt
-           Auto      wählt anhand des Registry-Markers automatisch
-      8. Optional (-RunIltRoundtrip, nur auf einem Pilotgerät vor dem ersten Lauf): beweist per gpupdate,
-         dass das Item-Level-Targeting funktioniert (Marker gesetzt = die GPO legt Task und Skript nicht an,
-         Marker entfernt = die GPO legt beides wieder an)
+    CHECKS
+      1. SYSTEM context: domain membership, secure channel
+      2. Permission to rename: runs the real function Test-AdRenamePermission from
+         Invoke-HostRename.ps1 in the SYSTEM context and shows which attributes the computer account
+         may write
+      3. Name template: preview of the target name for this device (serial number or future ID, shortening)
+         using the real functions from Invoke-HostRename.ps1, without changing anything
+      4. Log share: can the computer account append? (writes a test file pester-write-test-<PC>.csv)
+      5. Source share: can the computer account read the script but not change it?
+      6. GPO: is applied on this device according to gpresult
+      7. Deployment state
+           PreRun    before the first run: script copied, task created correctly from the GPP, trigger,
+                     local folder not writable for users
+           PostRun   after rename and reboot: name per template, AD object, marker, task and script
+                     removed, central logs complete, local log files and folder removed
+           Auto      chooses automatically based on the registry marker
+      8. Optional (-RunIltRoundtrip, only on a pilot device before the first run): proves via gpupdate
+         that item-level targeting works (marker set = the GPO does not create task and script,
+         marker removed = the GPO creates both again)
 
-    Konfiguration: HostRename.Checks.psd1 (schreibt Prepare-HostRename.ps1 beim Setup).
+    Configuration: HostRename.Checks.psd1 (written by Prepare-HostRename.ps1 during setup).
 
 .PARAMETER ConfigPath
-    Pfad der Test-Konfiguration (Standard: HostRename.Checks.psd1 neben dieser Datei).
+    Path of the test configuration (default: HostRename.Checks.psd1 next to this file).
 
 .PARAMETER ScriptFolder
-    Ordner mit Invoke-HostRename.ps1 (Standard: der Ordner dieser Testdatei).
+    Folder containing Invoke-HostRename.ps1 (default: the folder of this test file).
 
 .PARAMETER Phase
-    Auto, PreRun oder PostRun (siehe oben; Standard: Auto).
+    Auto, PreRun or PostRun (see above; default: Auto).
 
 .PARAMETER RunIltRoundtrip
-    Führt zusätzlich den Roundtrip-Test für das Item-Level-Targeting aus. Verändert vorübergehend Task und
-    Skript auf dem Pilotgerät; die GPO stellt beides wieder her.
+    Additionally runs the roundtrip test for item-level targeting. Temporarily changes the task and
+    script on the pilot device; the GPO restores both.
 
 .PARAMETER SkipGpUpdate
-    Überspringt das gpupdate vor dem Test.
+    Skips the gpupdate before the test.
 
 .EXAMPLE
     Invoke-Pester -Path .\HostRename.Client.Tests.ps1 -Output Detailed
 
-    Prüft das Pilotgerät vor dem ersten Lauf (Phase wird automatisch gewählt).
+    Checks the pilot device before the first run (the phase is chosen automatically).
 
 .EXAMPLE
     $c = New-PesterContainer -Path .\HostRename.Client.Tests.ps1 -Data @{ Phase = 'PostRun' }
     Invoke-Pester -Container $c -Output Detailed
 
-    Prüft das Gerät nach Umbenennung und Neustart.
+    Checks the device after rename and reboot.
 
 .EXAMPLE
     $c = New-PesterContainer -Path .\HostRename.Client.Tests.ps1 -Data @{ RunIltRoundtrip = $true }
     Invoke-Pester -Container $c -Output Detailed
 
-    Roundtrip-Test für das Item-Level-Targeting auf dem Pilotgerät.
+    Roundtrip test for item-level targeting on the pilot device.
 
 .NOTES
-    Produkt          HostRename
+    Product          HostRename
     Version          1.1.9
-    Stand            2026-10-30
-    Ausführung       Lokaler Administrator auf dem Pilotgerät (Windows PowerShell 5.1)
-    Kodierung        UTF-8 mit BOM (für die Windows PowerShell 5.1 erforderlich)
+    Date             2026-10-30
+    Execution        Local administrator on the pilot device (Windows PowerShell 5.1)
+    Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)
 
 .LINK
     README.md
@@ -86,7 +86,7 @@ BeforeAll {
     $ConfigPath   = if ($ConfigPath)   { $ConfigPath }   else { Join-Path $PSScriptRoot 'HostRename.Checks.psd1' }
     $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { $PSScriptRoot }
     if (-not (Test-Path $ConfigPath)) {
-        throw "Konfiguration '$ConfigPath' fehlt. Zuerst .\Prepare-HostRename.ps1 -Action Setup ausführen (schreibt die Datei aus den Variablen des Skripts) oder HostRename.Checks.beispiel.psd1 als HostRename.Checks.psd1 kopieren und anpassen."
+        throw "Configuration '$ConfigPath' is missing. First run .\Prepare-HostRename.ps1 -Action Setup (writes the file from the script's variables) or copy HostRename.Checks.beispiel.psd1 to HostRename.Checks.psd1 and adjust it."
     }
     $cfg = Import-PowerShellDataFile -Path $ConfigPath
 
@@ -98,7 +98,7 @@ BeforeAll {
     $phaseResolved = if ($Phase -ne 'Auto') { $Phase } elseif (Test-Path $markerPath) { 'PostRun' } else { 'PreRun' }
 
     function Invoke-AsSystem {
-        # Führt Code in einem temporären Scheduled Task als SYSTEM aus und liefert das (JSON-)Ergebnis zurück.
+        # Runs code in a temporary scheduled task as SYSTEM and returns the (JSON) result.
         param(
             [Parameter(Mandatory)][string]$Code,
             [hashtable]$Variables = @{},
@@ -140,7 +140,7 @@ catch {
             while (-not (Test-Path $out) -and $sw.Elapsed.TotalSeconds -lt $TimeoutSec) { Start-Sleep -Milliseconds 500 }
             Start-Sleep -Milliseconds 500
             if (Test-Path $out) { return (Get-Content -Path $out -Raw -Encoding UTF8 | ConvertFrom-Json) }
-            return [pscustomobject]@{ Error = "Timeout nach $TimeoutSec s" }
+            return [pscustomobject]@{ Error = "Timeout after $TimeoutSec s" }
         }
         finally {
             Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
@@ -164,20 +164,20 @@ catch {
     $names = Get-ComputerNames
 }
 
-Describe 'Voraussetzungen' {
-    It 'läuft mit Administratorrechten' {
+Describe 'Prerequisites' {
+    It 'runs with administrator rights' {
         $id = [Security.Principal.WindowsIdentity]::GetCurrent()
         (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) | Should -BeTrue
     }
-    It 'das Gerät ist Mitglied einer Domäne' {
+    It 'the device is a member of a domain' {
         (Get-CimInstance Win32_ComputerSystem).PartOfDomain | Should -BeTrue
     }
-    It 'Invoke-HostRename.ps1 liegt neben den Tests (für die Funktionsprüfung)' {
-        Test-Path $deployScript | Should -BeTrue -Because "Erwartet: $deployScript"
+    It 'Invoke-HostRename.ps1 is located next to the tests (for the function check)' {
+        Test-Path $deployScript | Should -BeTrue -Because "Expected: $deployScript"
     }
 }
 
-Describe 'Computerkonto-Kontext (SYSTEM)' {
+Describe 'Computer account context (SYSTEM)' {
     BeforeAll {
         $sys = Invoke-AsSystem -Code @'
 $cs = Get-CimInstance Win32_ComputerSystem
@@ -190,16 +190,16 @@ $cs = Get-CimInstance Win32_ComputerSystem
 }
 '@
     }
-    It 'der Test läuft tatsächlich als SYSTEM' {
+    It 'the test actually runs as SYSTEM' {
         $sys.Error | Should -BeNullOrEmpty
-        $sys.UserSid | Should -Be 'S-1-5-18' -Because "Benutzer: $($sys.User)"
+        $sys.UserSid | Should -Be 'S-1-5-18' -Because "User: $($sys.User)"
     }
-    It 'der Secure Channel zur Domäne ist intakt' {
+    It 'the secure channel to the domain is intact' {
         $sys.SecureChannel | Should -BeTrue
     }
 }
 
-Describe 'Berechtigung zum Umbenennen (echte Funktion aus Invoke-HostRename.ps1, als SYSTEM)' {
+Describe 'Permission to rename (real function from Invoke-HostRename.ps1, as SYSTEM)' {
     BeforeAll {
         $tokens = $null; $errors = $null
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($deployScript, [ref]$tokens, [ref]$errors)
@@ -215,24 +215,24 @@ Test-AdRenamePermission -ComputerName $name -DomainName $cs.Domain
 '@
         $perm = Invoke-AsSystem -Code ($fnText + $call)
     }
-    It 'beide Funktionen wurden im Skript gefunden' {
+    It 'both functions were found in the script' {
         $fn.Count | Should -Be 2
     }
-    It 'das Computerobjekt wird im AD gefunden' {
+    It 'the computer object is found in AD' {
         $perm.Error | Should -BeNullOrEmpty
         $perm.Found | Should -BeTrue
     }
-    It 'die Schreibrechte sind auswertbar (allowedAttributesEffective ist nicht leer)' {
-        $perm.Inconclusive | Should -BeFalse -Because 'Sonst würde Invoke-HostRename.ps1 mit WARN fortfahren, ohne die Berechtigung zu kennen'
+    It 'the write permissions can be evaluated (allowedAttributesEffective is not empty)' {
+        $perm.Inconclusive | Should -BeFalse -Because 'Otherwise Invoke-HostRename.ps1 would continue with WARN without knowing the permission'
     }
-    It 'cn und sAMAccountName sind für das Computerkonto schreibbar (Delegation wirkt)' {
-        Write-Host "    Schreibbar (relevante Attribute): $(@($perm.Writable) -join ', ')"
-        Write-Host "    Hinweis: dNSHostName/servicePrincipalName erscheinen nur, wenn Validated Writes dort mitgemeldet werden - das ist unkritisch."
-        @($perm.Missing) | Should -BeNullOrEmpty -Because "Fehlend: $(@($perm.Missing) -join ', ') - Delegation (Prepare-HostRename.ps1 -Action Setup -Component Delegation) bzw. OU des Geräts prüfen"
+    It 'cn and sAMAccountName are writable for the computer account (delegation is effective)' {
+        Write-Host "    Writable (relevant attributes): $(@($perm.Writable) -join ', ')"
+        Write-Host "    Note: dNSHostName/servicePrincipalName only appear if Validated Writes are reported there - this is not critical."
+        @($perm.Missing) | Should -BeNullOrEmpty -Because "Missing: $(@($perm.Missing) -join ', ') - check the delegation (Prepare-HostRename.ps1 -Action Setup -Component Delegation) or the device's OU"
     }
 }
 
-Describe 'Namensvorlage auf diesem Gerät (Vorschau, nur Phase PreRun)' {
+Describe 'Name template on this device (preview, phase PreRun only)' {
     BeforeAll {
         $tpl = if ($cfg.NameTemplate) { $cfg.NameTemplate } elseif ($cfg.Prefix -or $cfg.Suffix) { '{0}{{Name}}{1}' -f $cfg.Prefix, $cfg.Suffix } else { '' }
         $tpl        = $tpl.ToUpper()
@@ -263,26 +263,26 @@ Describe 'Namensvorlage auf diesem Gerät (Vorschau, nur Phase PreRun)' {
             $plan = Resolve-NameTemplate -Template $tpl -CurrentName $names.Active -Serial $serialValue -MaxLength 15 -OnTooLong $onTooLong
         }
     }
-    It 'liefert eine verwendbare Seriennummer oder (bei GenerateId) eine Zukunfts-ID (nur wenn die Vorlage {Serial} verwendet)' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
-        if (-not $usesSerial)            { Set-ItResult -Skipped -Because 'Die Vorlage verwendet {Serial} nicht'; return }
-        if ($usedFutureId) { Write-Host "    Keine verwendbare Seriennummer (verworfen: $(@($serial.Rejected) -join '; ')) -> Zukunfts-ID '$serialValue'" }
-        else               { Write-Host "    Seriennummer: '$($serial.Value)' (Quelle: $($serial.Source))" }
-        $serialValue | Should -Not -BeNullOrEmpty -Because "OnSerialProblem = $onSerial; verworfene Werte: $(@($serial.Rejected) -join '; ')"
+    It 'yields a usable serial number or (with GenerateId) a future ID (only if the template uses {Serial})' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
+        if (-not $usesSerial)            { Set-ItResult -Skipped -Because 'The template does not use {Serial}'; return }
+        if ($usedFutureId) { Write-Host "    No usable serial number (discarded: $(@($serial.Rejected) -join '; ')) -> future ID '$serialValue'" }
+        else               { Write-Host "    Serial number: '$($serial.Value)' (source: $($serial.Source))" }
+        $serialValue | Should -Not -BeNullOrEmpty -Because "OnSerialProblem = $onSerial; discarded values: $(@($serial.Rejected) -join '; ')"
     }
-    It 'ergibt für dieses Gerät einen gültigen Zielnamen' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
-        $plan | Should -Not -BeNullOrEmpty -Because 'Keine Regel konfiguriert oder keine verwendbare Seriennummer'
-        Write-Host "    Vorschau: $($names.Active) -> $($plan.Name)$(if ($plan.Truncated) { '  (gekürzt)' })"
+    It 'yields a valid target name for this device' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
+        $plan | Should -Not -BeNullOrEmpty -Because 'No rule configured or no usable serial number'
+        Write-Host "    Vorschau: $($names.Active) -> $($plan.Name)$(if ($plan.Truncated) { '  (shortened)' })"
         $plan.Ok | Should -BeTrue -Because $plan.Error
     }
-    It 'der Zielname passt zum erwarteten Muster (NameLike)' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the target name matches the expected pattern (NameLike)' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         $plan.Name | Should -BeLike $likePattern
     }
 }
 
-Describe 'Zentraler Log-Share aus Sicht des Computerkontos' {
+Describe 'Central log share as seen by the computer account' {
     BeforeAll {
         $logDir   = Split-Path -Path $cfg.CentralLogPath -Parent
         $testFile = Join-Path $logDir ('pester-write-test-' + $env:COMPUTERNAME + '.csv')
@@ -291,24 +291,24 @@ $file = Join-Path $LogDir ('pester-write-test-' + $env:COMPUTERNAME + '.csv')
 $fs = [System.IO.File]::Open($file, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
 try {
     $sw = New-Object System.IO.StreamWriter($fs, (New-Object System.Text.UTF8Encoding($true)))
-    $sw.WriteLine('Pester-Schreibtest ' + (Get-Date -Format s))
+    $sw.WriteLine('Pester write test ' + (Get-Date -Format s))
     $sw.Flush()
 }
 finally { $fs.Dispose() }
 @{ Written = $true }
 '@
     }
-    It 'das Computerkonto kann mit denselben Optionen wie das Skript (Append, FileShare.Read) anfügen' {
+    It 'the computer account can append with the same options as the script (Append, FileShare.Read)' {
         $write.Error   | Should -BeNullOrEmpty
         $write.Written | Should -BeTrue
     }
     AfterAll {
-        # Testdatei aufräumen (das Computerkonto hat meist keine Löschrechte, der Admin schon)
+        # Clean up the test file (the computer account usually has no delete rights, the admin does)
         if ($testFile -and (Test-Path $testFile)) { Remove-Item -Path $testFile -Force -ErrorAction SilentlyContinue }
     }
 }
 
-Describe 'Quell-Share aus Sicht des Computerkontos' {
+Describe 'Source share as seen by the computer account' {
     BeforeAll {
         $srcInfo = Invoke-AsSystem -Variables @{ Source = $sourceScript } -Code @'
 $hash = (Get-FileHash -Path $Source -Algorithm SHA256).Hash
@@ -323,16 +323,16 @@ catch { }
 '@
         $adminHash = if (Test-Path $sourceScript) { (Get-FileHash -Path $sourceScript -Algorithm SHA256).Hash } else { $null }
     }
-    It 'das Computerkonto kann das Skript lesen' {
+    It 'the computer account can read the script' {
         $srcInfo.Error | Should -BeNullOrEmpty
         $srcInfo.Hash  | Should -Be $adminHash
     }
-    It 'das Computerkonto kann das Skript NICHT ändern (Schutz vor Manipulation)' {
+    It 'the computer account can NOT change the script (protection against tampering)' {
         $srcInfo.CanWrite | Should -BeFalse
     }
 }
 
-Describe 'GPO-Anwendung auf diesem Gerät' {
+Describe 'GPO application on this device' {
     BeforeAll {
         $tmp = Join-Path $env:TEMP ('gpresult-' + [guid]::NewGuid().ToString('N') + '.xml')
         & gpresult.exe /scope computer /x $tmp /f | Out-Null
@@ -342,80 +342,80 @@ Describe 'GPO-Anwendung auf diesem Gerät' {
     }
     AfterAll { if ($tmp) { Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue } }
 
-    It 'die GPO taucht in den Ergebnissen der Computerrichtlinie auf' {
-        $applied.Count | Should -BeGreaterThan 0 -Because 'OU-Verknüpfung (Link aktiviert?), Sicherheitsfilterung oder noch kein gpupdate?'
+    It 'the GPO appears in the computer policy results' {
+        $applied.Count | Should -BeGreaterThan 0 -Because 'OU link (link enabled?), security filtering, or no gpupdate yet?'
     }
-    It 'die GPO wird nicht durch Filter oder Berechtigung ausgeschlossen' {
-        if ($applied.Count -eq 0) { Set-ItResult -Skipped -Because 'GPO nicht in der Ergebnisliste'; return }
+    It 'the GPO is not excluded by filter or permission' {
+        if ($applied.Count -eq 0) { Set-ItResult -Skipped -Because 'GPO not in the result list'; return }
         $applied[0].FilterAllowed | Should -Be 'true'
         $applied[0].AccessDenied  | Should -Be 'false'
     }
 }
 
-Describe 'Deployment-Zustand vor dem ersten Lauf (Phase PreRun)' {
+Describe 'Deployment state before the first run (phase PreRun)' {
     BeforeAll {
         $t       = Get-ScheduledTask -TaskName $cfg.TaskName -ErrorAction SilentlyContinue
         $info    = if ($t) { Get-ScheduledTaskInfo -TaskName $cfg.TaskName } else { $null }
         $actions = if ($t) { @($t.Actions) } else { @() }
     }
-    It 'das Skript wurde per GPP lokal abgelegt' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the script was placed locally via GPP' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         Test-Path $localScript | Should -BeTrue
     }
-    It 'die lokale Kopie ist identisch mit dem Original auf dem Share' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the local copy is identical to the original on the share' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         (Get-FileHash $localScript -Algorithm SHA256).Hash | Should -Be (Get-FileHash $sourceScript -Algorithm SHA256).Hash
     }
-    It 'die lokale Kopie ist syntaktisch korrekt' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the local copy is syntactically correct' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         $tk = $null; $er = $null
         [void][System.Management.Automation.Language.Parser]::ParseFile($localScript, [ref]$tk, [ref]$er)
         $er | Should -BeNullOrEmpty
     }
-    It 'der Scheduled Task wurde aus der GPP erzeugt' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the scheduled task was created from the GPP' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         $t | Should -Not -BeNullOrEmpty
     }
-    It 'der Task läuft als SYSTEM mit höchsten Rechten' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the task runs as SYSTEM with highest privileges' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         $t.Principal.UserId   | Should -Match 'SYSTEM|S-1-5-18'
         $t.Principal.RunLevel | Should -Be 'Highest'
     }
-    It 'die letzte Aktion startet das lokale Skript mit der konfigurierten Umbenennungsregel' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the last action starts the local script with the configured rename rule' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         $last = $actions[-1]
         $last.Execute   | Should -Be 'powershell.exe'
         $last.Arguments | Should -Match ([regex]::Escape($localScript))
         $rule = if ($cfg.NameTemplate) { '-NameTemplate "' + $cfg.NameTemplate + '"' } else { '-Prefix "' + $cfg.Prefix + '"' }
         $last.Arguments | Should -Match ([regex]::Escape($rule))
     }
-    It 'der Task übergibt -OnSerialProblem und -FutureIdLength (nur wenn die Vorlage {Serial} verwendet)' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
-        if ($cfg.NameTemplate -notmatch '\{SERIAL(:-?\d+)?\}') { Set-ItResult -Skipped -Because 'Die Vorlage verwendet {Serial} nicht'; return }
+    It 'the task passes -OnSerialProblem and -FutureIdLength (only if the template uses {Serial})' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
+        if ($cfg.NameTemplate -notmatch '\{SERIAL(:-?\d+)?\}') { Set-ItResult -Skipped -Because 'The template does not use {Serial}'; return }
         $mode = if ($cfg.OnSerialProblem) { $cfg.OnSerialProblem } else { 'GenerateId' }
         $len  = if ($cfg.FutureIdLength)  { $cfg.FutureIdLength }  else { 8 }
         $actions[-1].Arguments | Should -Match ([regex]::Escape("-OnSerialProblem $mode"))
         $actions[-1].Arguments | Should -Match ([regex]::Escape("-FutureIdLength $len"))
     }
-    It 'der Task übergibt -Cleanup (nur wenn Cleanup erwartet wird)' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the task passes -Cleanup (only if cleanup is expected)' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         if (-not $cfg.ExpectCleanup)     { Set-ItResult -Skipped -Because 'ExpectCleanup = $false'; return }
         $actions[-1].Arguments | Should -Match '-Cleanup'
     }
-    It 'der Task führt zuerst die icacls-Absicherung aus (nur wenn Hardening erwartet wird)' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the task runs the icacls hardening first (only if hardening is expected)' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         if (-not $cfg.ExpectHardening)   { Set-ItResult -Skipped -Because 'ExpectHardening = $false'; return }
         $actions.Count      | Should -BeGreaterOrEqual 3
         $actions[0].Execute | Should -Be 'icacls.exe'
         $actions[1].Execute | Should -Be 'icacls.exe'
     }
-    It 'der Task hat einen Systemstart-Trigger' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the task has a system startup trigger' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         @($t.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskBootTrigger' }).Count | Should -BeGreaterThan 0
     }
-    It 'Standardbenutzer dürfen im lokalen Ordner nichts anlegen oder ändern (Standard-ACL bzw. Härtung)' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
-        if (-not (Test-Path $cfg.LocalFolder)) { Set-ItResult -Skipped -Because 'Der lokale Ordner existiert noch nicht (GPO noch nicht angewendet)'; return }
+    It 'standard users must not create or change anything in the local folder (default ACL or hardening)' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
+        if (-not (Test-Path $cfg.LocalFolder)) { Set-ItResult -Skipped -Because 'The local folder does not exist yet (GPO not applied yet)'; return }
         $FSR2 = [System.Security.AccessControl.FileSystemRights]
         $mask = $FSR2::WriteData -bor $FSR2::AppendData -bor $FSR2::Delete -bor $FSR2::DeleteSubdirectoriesAndFiles -bor $FSR2::ChangePermissions -bor $FSR2::TakeOwnership
         $bad = @((Get-Acl -Path $cfg.LocalFolder).Access | Where-Object {
@@ -423,124 +423,124 @@ Describe 'Deployment-Zustand vor dem ersten Lauf (Phase PreRun)' {
             $_.AccessControlType -eq 'Allow' -and $sid -in @('S-1-5-32-545', 'S-1-5-11', 'S-1-1-0') -and (($_.FileSystemRights -band $mask) -ne 0) })
         $bad | Should -BeNullOrEmpty -Because (($bad | ForEach-Object { "$($_.IdentityReference): $($_.FileSystemRights)" }) -join '; ')
     }
-    It 'der Task hat einen Registrierungs-Trigger ohne Verzögerung (nur wenn RegistrationTrigger gesetzt ist)' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
-        if (-not $cfg.RegistrationTrigger) { Set-ItResult -Skipped -Because 'RegistrationTrigger ist abgeschaltet'; return }
+    It 'the task has a registration trigger without delay (only if RegistrationTrigger is set)' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
+        if (-not $cfg.RegistrationTrigger) { Set-ItResult -Skipped -Because 'RegistrationTrigger is disabled'; return }
         $reg = @($t.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskRegistrationTrigger' })
         $reg.Count | Should -BeGreaterThan 0
         $reg[0].Delay | Should -BeNullOrEmpty
     }
-    It 'der Task hat den täglichen Trigger mit Wiederholung (nur wenn RepeatInterval gesetzt ist)' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
-        if (-not $cfg.RepeatInterval) { Set-ItResult -Skipped -Because 'RepeatInterval ist leer'; return }
+    It 'the task has the daily trigger with repetition (only if RepeatInterval is set)' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
+        if (-not $cfg.RepeatInterval) { Set-ItResult -Skipped -Because 'RepeatInterval is empty'; return }
         $daily = @($t.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskDailyTrigger' })
         $daily.Count | Should -BeGreaterThan 0
         $daily[0].Repetition.Interval | Should -Be $cfg.RepeatInterval
     }
-    It 'der Task ist nach dem Anlegen gelaufen (Hinweis: LastRunTime/LastTaskResult werden angezeigt)' {
-        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
-        if (-not $info) { Set-ItResult -Skipped -Because 'Kein Task vorhanden'; return }
+    It 'the task has run since it was created (note: LastRunTime/LastTaskResult are displayed)' {
+        if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
+        if (-not $info) { Set-ItResult -Skipped -Because 'No task present'; return }
         Write-Host "    LastRunTime: $($info.LastRunTime)   LastTaskResult: 0x$('{0:X}' -f $info.LastTaskResult)   NextRunTime: $($info.NextRunTime)"
-        if ($info.LastRunTime -lt [datetime]'2001-01-01') { Set-ItResult -Skipped -Because 'Der Task ist noch nicht gelaufen (0x41303); mit Start-ScheduledTask -TaskName ' + $cfg.TaskName + ' manuell starten'; return }
-        $info.LastTaskResult | Should -BeIn @(0, 3010) -Because 'Erwartet 0 (nichts zu tun) bzw. 3010 (umbenannt, Neustart nötig)'
+        if ($info.LastRunTime -lt [datetime]'2001-01-01') { Set-ItResult -Skipped -Because 'The task has not run yet (0x41303); run Start-ScheduledTask -TaskName ' + $cfg.TaskName + ' to start it manually'; return }
+        $info.LastTaskResult | Should -BeIn @(0, 3010) -Because 'Expected 0 (nothing to do) or 3010 (renamed, reboot required)'
     }
-    It 'der lokale Ordner ist abgesichert, sobald der Task einmal gelaufen ist' {
-        if ($phaseResolved -ne 'PreRun')  { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the local folder is hardened as soon as the task has run once' {
+        if ($phaseResolved -ne 'PreRun')  { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         if (-not $cfg.ExpectHardening)    { Set-ItResult -Skipped -Because 'ExpectHardening = $false'; return }
-        if (-not $info -or $info.LastRunTime -lt [datetime]'2001-01-01') { Set-ItResult -Skipped -Because 'Der Task ist noch nie gelaufen'; return }
+        if (-not $info -or $info.LastRunTime -lt [datetime]'2001-01-01') { Set-ItResult -Skipped -Because 'The task has never run'; return }
         $acl = Get-Acl -Path $cfg.LocalFolder
         $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value | Should -Be 'S-1-5-32-544'
         $acl.AreAccessRulesProtected | Should -BeTrue
     }
 }
 
-Describe 'Ergebnis nach Umbenennung und Neustart (Phase PostRun)' {
+Describe 'Result after rename and reboot (phase PostRun)' {
     BeforeAll {
         $localLog  = Join-Path $cfg.LocalFolder 'rename-local.csv'
         $localRows = if (Test-Path $localLog) { @(Import-Csv -Path $localLog -Delimiter ';' -Encoding UTF8) } else { @() }
         $machineGuid = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Cryptography').MachineGuid
     }
-    It 'der aktive Computername entspricht der Namensvorlage' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the active computer name matches the name template' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         $nameLike = if ($cfg.NameLike) { $cfg.NameLike } else { "$($cfg.Prefix)*" }
         if ($names.Pending -like $nameLike -and $names.Active -notlike $nameLike) {
-            Set-ItResult -Skipped -Because "Umbenennung auf '$($names.Pending)' steht aus - Neustart erforderlich"; return
+            Set-ItResult -Skipped -Because "Rename to '$($names.Pending)' is pending - reboot required"; return
         }
         $names.Active | Should -BeLike $nameLike
     }
-    It 'der Zustand (HostRenameState) enthält Zielname und Vorlage' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the state (HostRenameState) contains target name and template' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         $stateKey = 'HKLM:\SOFTWARE\HostRenameState'
-        if (-not (Test-Path $stateKey)) { Set-ItResult -Skipped -Because 'Kein Zustand vorhanden (Gerät hieß schon passend oder wurde nicht von HostRename umbenannt)'; return }
+        if (-not (Test-Path $stateKey)) { Set-ItResult -Skipped -Because 'No state present (the device already had a matching name or was not renamed by HostRename)'; return }
         $st = Get-ItemProperty -Path $stateKey
         $st.TargetName | Should -BeExactly $names.Pending
         $st.Template   | Should -Not -BeNullOrEmpty
     }
-    It 'das AD-Computerobjekt existiert mit dem neuen Namen' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the AD computer object exists with the new name' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         $r = Invoke-AsSystem -Variables @{ Name = $names.Pending } -Code @'
 $s = [adsisearcher]"(&(objectCategory=computer)(sAMAccountName=$Name`$))"
 $hit = $s.FindOne()
 @{ Found = [bool]$hit; Dn = $(if ($hit) { [string]$hit.Properties['distinguishedname'][0] } else { '' }) }
 '@
         $r.Error | Should -BeNullOrEmpty
-        $r.Found | Should -BeTrue -Because "Kein Computerobjekt mit sAMAccountName $($names.Pending)`$ gefunden"
+        $r.Found | Should -BeTrue -Because "No computer object with sAMAccountName $($names.Pending)`$ found"
     }
-    It 'der Secure Channel ist nach der Umbenennung intakt' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
-        if ($names.Pending -ne $names.Active) { Set-ItResult -Skipped -Because 'Neustart steht noch aus'; return }
+    It 'the secure channel is intact after the rename' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
+        if ($names.Pending -ne $names.Active) { Set-ItResult -Skipped -Because 'Reboot is still pending'; return }
         $r = Invoke-AsSystem -Code '[bool](Test-ComputerSecureChannel)'
         $r | Should -BeTrue
     }
-    It 'der Registry-Marker ist gesetzt (nur wenn Cleanup erwartet wird)' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the registry marker is set (only if cleanup is expected)' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         if (-not $cfg.ExpectCleanup)      { Set-ItResult -Skipped -Because 'ExpectCleanup = $false'; return }
         (Get-ItemProperty -Path $markerPath).Completed | Should -Not -BeNullOrEmpty
     }
-    It 'der Scheduled Task wurde entfernt (nur wenn Cleanup erwartet wird)' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the scheduled task was removed (only if cleanup is expected)' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         if (-not $cfg.ExpectCleanup)      { Set-ItResult -Skipped -Because 'ExpectCleanup = $false'; return }
         Get-ScheduledTask -TaskName $cfg.TaskName -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
     }
-    It 'lokale Logdateien und Ordner sind nach der Bereinigung entfernt, wenn das zentrale Log funktioniert (nur wenn Cleanup erwartet wird)' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'local log files and folder are removed after the cleanup if the central log works (only if cleanup is expected)' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         if (-not $cfg.ExpectCleanup)      { Set-ItResult -Skipped -Because 'ExpectCleanup = $false'; return }
         try   { $central = @(Import-Csv -Path $cfg.CentralLogPath -Delimiter ';' -Encoding UTF8 -ErrorAction Stop | Where-Object { $_.MachineGuid -eq $machineGuid }) }
-        catch { Set-ItResult -Skipped -Because "Zentrales Log nicht lesbar für dieses Konto: $($_.Exception.Message)"; return }
-        if (@($central | ForEach-Object { $_.Event }) -notcontains 'CLEANUP_DONE') { Set-ItResult -Skipped -Because 'CLEANUP_DONE steht nicht im zentralen Log (Zustellung hängt, lokale Logs bleiben dann erhalten)'; return }
+        catch { Set-ItResult -Skipped -Because "Central log not readable for this account: $($_.Exception.Message)"; return }
+        if (@($central | ForEach-Object { $_.Event }) -notcontains 'CLEANUP_DONE') { Set-ItResult -Skipped -Because 'CLEANUP_DONE is not in the central log (delivery is stuck, local logs are then kept)'; return }
         Test-Path (Join-Path $cfg.LocalFolder 'rename-local.csv') | Should -BeFalse
         Test-Path (Join-Path $cfg.LocalFolder 'pending.csv')      | Should -BeFalse
-        Test-Path $cfg.LocalFolder                                | Should -BeFalse -Because 'Der leere Ordner wird mit entfernt'
+        Test-Path $cfg.LocalFolder                                | Should -BeFalse -Because 'The empty folder is removed as well'
     }
-    It 'das lokale Skript wurde entfernt (nur wenn Cleanup erwartet wird)' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the local script was removed (only if cleanup is expected)' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         if (-not $cfg.ExpectCleanup)      { Set-ItResult -Skipped -Because 'ExpectCleanup = $false'; return }
         Test-Path $localScript | Should -BeFalse
     }
-    It 'das lokale Log dokumentiert die Umbenennung bzw. den bereits gesetzten Namen' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
-        if (-not $localRows.Count) { Set-ItResult -Skipped -Because 'Das lokale Log existiert nicht mehr (nach erfolgreicher Zustellung entfernt, Soll)'; return }
+    It 'the local log documents the rename or the already set name' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
+        if (-not $localRows.Count) { Set-ItResult -Skipped -Because 'The local log no longer exists (removed after successful delivery, as intended)'; return }
         $ev = @($localRows | ForEach-Object { $_.Event })
         ($ev -contains 'RENAMED' -or $ev -contains 'ALREADY_DONE' -or $ev -contains 'PENDING_REBOOT') | Should -BeTrue -Because "Events: $($ev -join ', ')"
     }
-    It 'das lokale Log dokumentiert die Bereinigung (nur wenn Cleanup erwartet wird)' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the local log documents the cleanup (only if cleanup is expected)' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         if (-not $cfg.ExpectCleanup)      { Set-ItResult -Skipped -Because 'ExpectCleanup = $false'; return }
-        if (-not $localRows.Count) { Set-ItResult -Skipped -Because 'Das lokale Log existiert nicht mehr (nach erfolgreicher Zustellung entfernt, Soll); CLEANUP_DONE steht im zentralen Log'; return }
+        if (-not $localRows.Count) { Set-ItResult -Skipped -Because 'The local log no longer exists (removed after successful delivery, as intended); CLEANUP_DONE is in the central log'; return }
         @($localRows | ForEach-Object { $_.Event }) | Should -Contain 'CLEANUP_DONE'
     }
-    It 'das zentrale Log enthält Einträge dieses Geräts (per MachineGuid)' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the central log contains entries of this device (by MachineGuid)' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         try   { $rows = @(Import-Csv -Path $cfg.CentralLogPath -Delimiter ';' -Encoding UTF8 -ErrorAction Stop) }
-        catch { Set-ItResult -Skipped -Because "Zentrales Log nicht lesbar für dieses Konto: $($_.Exception.Message)"; return }
+        catch { Set-ItResult -Skipped -Because "Central log not readable for this account: $($_.Exception.Message)"; return }
         $mine = @($rows | Where-Object { $_.MachineGuid -eq $machineGuid })
         $mine.Count | Should -BeGreaterThan 0
         $errs = @($mine | Where-Object { $_.Level -eq 'ERROR' })
-        Write-Host "    Zentrales Log: $($mine.Count) Einträge dieses Geräts, davon $($errs.Count) ERROR"
+        Write-Host "    Central log: $($mine.Count) entries of this device, of which $($errs.Count) ERROR"
         if ($cfg.ExpectCleanup) { @($mine | ForEach-Object { $_.Event }) | Should -Contain 'CLEANUP_DONE' }
     }
-    It 'die GPO legt Task und Skript nach gpupdate NICHT erneut an (nur wenn Cleanup erwartet wird)' {
-        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase ist $phaseResolved"; return }
+    It 'the GPO does NOT recreate task and script after gpupdate (only if cleanup is expected)' {
+        if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         if (-not $cfg.ExpectCleanup)      { Set-ItResult -Skipped -Because 'ExpectCleanup = $false'; return }
         if ($SkipGpUpdate)                { Set-ItResult -Skipped -Because 'SkipGpUpdate = $true'; return }
         Invoke-GpUpdate
@@ -549,7 +549,7 @@ $hit = $s.FindOne()
     }
 }
 
-Describe 'Item-Level-Targeting: Roundtrip mit Marker (opt-in: -RunIltRoundtrip)' {
+Describe 'Item-level targeting: roundtrip with marker (opt-in: -RunIltRoundtrip)' {
     BeforeAll {
         $iltRun = $RunIltRoundtrip -and
                   $cfg.ExpectCleanup -and
@@ -558,7 +558,7 @@ Describe 'Item-Level-Targeting: Roundtrip mit Marker (opt-in: -RunIltRoundtrip)'
                   [bool](Get-ScheduledTask -TaskName $cfg.TaskName -ErrorAction SilentlyContinue)
         $withMarker = $null; $withoutMarker = $null
         if ($iltRun) {
-            # A) Mit Marker: Task und Skript entfernen, GPO anwenden -> darf NICHTS neu anlegen
+            # A) With marker: remove task and script, apply GPO -> must NOT recreate anything
             New-Item -Path $markerPath -Force | Out-Null
             Unregister-ScheduledTask -TaskName $cfg.TaskName -Confirm:$false
             Remove-Item -Path $localScript -Force
@@ -567,7 +567,7 @@ Describe 'Item-Level-Targeting: Roundtrip mit Marker (opt-in: -RunIltRoundtrip)'
                 FileExists = (Test-Path $localScript)
                 TaskExists = [bool](Get-ScheduledTask -TaskName $cfg.TaskName -ErrorAction SilentlyContinue)
             }
-            # B) Ohne Marker: GPO anwenden -> muss beides wieder anlegen
+            # B) Without marker: apply GPO -> must recreate both
             Remove-Item -Path $markerPath -Recurse -Force
             Invoke-GpUpdate
             $withoutMarker = [pscustomobject]@{
@@ -577,24 +577,24 @@ Describe 'Item-Level-Targeting: Roundtrip mit Marker (opt-in: -RunIltRoundtrip)'
         }
     }
     AfterAll {
-        # Sicherstellen, dass der Marker nicht auf dem Pilotgerät verbleibt
+        # Make sure the marker does not remain on the pilot device
         if ($iltRun -and (Test-Path $markerPath)) { Remove-Item -Path $markerPath -Recurse -Force -ErrorAction SilentlyContinue }
     }
 
-    It 'Mit Marker: die GPO legt das Skript NICHT neu an' {
-        if (-not $iltRun) { Set-ItResult -Skipped -Because 'Nicht aktiviert oder Voraussetzungen nicht erfüllt (-RunIltRoundtrip, Phase PreRun, Task+Skript vorhanden)'; return }
-        $withMarker.FileExists | Should -BeFalse -Because 'Das Item-Level-Targeting greift nicht - XML-Syntax des Targetings prüfen'
+    It 'With marker: the GPO does NOT recreate the script' {
+        if (-not $iltRun) { Set-ItResult -Skipped -Because 'Not enabled or prerequisites not met (-RunIltRoundtrip, phase PreRun, task + script present)'; return }
+        $withMarker.FileExists | Should -BeFalse -Because 'Item-level targeting is not effective - check the XML syntax of the targeting'
     }
-    It 'Mit Marker: die GPO legt den Task NICHT neu an' {
-        if (-not $iltRun) { Set-ItResult -Skipped -Because 'Nicht aktiviert oder Voraussetzungen nicht erfüllt'; return }
-        $withMarker.TaskExists | Should -BeFalse -Because 'Das Item-Level-Targeting greift nicht - XML-Syntax des Targetings prüfen'
+    It 'With marker: the GPO does NOT recreate the task' {
+        if (-not $iltRun) { Set-ItResult -Skipped -Because 'Not enabled or prerequisites not met'; return }
+        $withMarker.TaskExists | Should -BeFalse -Because 'Item-level targeting is not effective - check the XML syntax of the targeting'
     }
-    It 'Ohne Marker: die GPO legt das Skript wieder an' {
-        if (-not $iltRun) { Set-ItResult -Skipped -Because 'Nicht aktiviert oder Voraussetzungen nicht erfüllt'; return }
-        $withoutMarker.FileExists | Should -BeTrue -Because 'Die GPP "Files" wird nicht (mehr) angewendet - ILT-Syntax oder GPO-Verarbeitung prüfen'
+    It 'Without marker: the GPO recreates the script' {
+        if (-not $iltRun) { Set-ItResult -Skipped -Because 'Not enabled or prerequisites not met'; return }
+        $withoutMarker.FileExists | Should -BeTrue -Because 'The GPP "Files" is no longer applied - check the ILT syntax or the GPO processing'
     }
-    It 'Ohne Marker: die GPO legt den Task wieder an' {
-        if (-not $iltRun) { Set-ItResult -Skipped -Because 'Nicht aktiviert oder Voraussetzungen nicht erfüllt'; return }
-        $withoutMarker.TaskExists | Should -BeTrue -Because 'Die GPP "Scheduled Tasks" wird nicht (mehr) angewendet - ILT-Syntax oder GPO-Verarbeitung prüfen'
+    It 'Without marker: the GPO recreates the task' {
+        if (-not $iltRun) { Set-ItResult -Skipped -Because 'Not enabled or prerequisites not met'; return }
+        $withoutMarker.TaskExists | Should -BeTrue -Because 'The GPP "Scheduled Tasks" is no longer applied - check the ILT syntax or the GPO processing'
     }
 }

@@ -1,0 +1,1085 @@
+﻿<#
+.SYNOPSIS
+    HostRename - client script: renames a domain-joined Windows device and its AD computer object.
+
+.DESCRIPTION
+    Runs on the client as a scheduled task (SYSTEM) and renames the computer with Rename-Computer, which also
+    renames the AD computer object. The script is idempotent: it can run any number of times and renames each
+    device only once. With -WhatIf it only shows the target name and changes nothing.
+
+    DEPLOYMENT MODE (-Deployment)
+      Gpo   [default] Scheduled task under SYSTEM, script copy in <Program Files>\HostRename (deployed via GPO).
+      Acmp  Run by the ACMP agent (as SYSTEM, from ACMP's own cache folder). Local logs go to
+            <ProgramData>\HostRename by default, -Reboot is ignored (ACMP controls the reboot; exit code
+            3010 is the signal), and -Cleanup never deletes the script file or its folder.
+            Requires 64-bit PowerShell: in a 32-bit process on 64-bit Windows the script prints an ERROR
+            (PLATFORM) and ends with exit code 1 before writing anything (a 32-bit agent starts
+            %SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe). The default log folder is
+            protected before every run (see -LocalDir).
+
+    NAME TEMPLATE
+      {Name}          previous host name
+      {Serial}        serial number (BIOS, otherwise system product, otherwise baseboard; A-Z and 0-9 only).
+                      Manufacturer placeholders ("To Be Filled By O.E.M."), values shorter than 4 characters
+                      and values consisting of a single repeated character are discarded.
+      Length          {Serial:8} = first 8, {Serial:-8} = last 8 characters (likewise {Name:4}, {Name:-4})
+      No template     -Prefix and -Suffix form "Prefix{Name}Suffix"
+      Target name     at most 15 characters from A-Z, 0-9, _ and -; no - at the start or end; not digits only
+      Too long        Only the placeholder values are shortened, the last one first; fixed characters stay (-OnTooLong)
+
+    PROCEDURE
+      1. Done?        If the name matches the template or the remembered target name
+                      (HKLM:\SOFTWARE\HostRenameState), there is nothing to do; with -Cleanup the cleanup runs.
+                      A different template triggers a new rename.
+      2. Check central log: name resolution, port 445, write permission. The result is only written to the
+                      local log (LOG_CHECK); the rename continues in any case.
+      3. Determine serial number (only with {Serial}). If it is unusable or the target name is already taken
+                      in AD, a future ID replaces the placeholder (-OnSerialProblem).
+      4. Preliminary checks: domain membership, secure channel, write permissions on the device's own AD object
+                      (allowedAttributesEffective), name collision in AD, DNS resolution (warning only).
+      5. Build the target name and shorten it if necessary.
+      6. Rename, verify in AD (warning only), remember state, optionally schedule a reboot (-Reboot).
+      7. With -Cleanup: deliver log entries to the share, set the registry marker, remove task and script
+                      and, once everything has arrived, the local log files together with the empty folder.
+                      Until then the cleanup is deferred and made up for on the next run.
+                      With -Deployment Acmp the script file and its folder are kept; the task is removed only if
+                      it exists. Without a central log (-NoCentralLog) nothing is deferred and the local
+                      log files are kept as the only evidence.
+      8. On every end, the result is written to HKLM:\SOFTWARE\HostRenameState (see REPORTING).
+
+    FUTURE ID
+      If the serial number is unusable or the target name is already taken in AD, a generated ID replaces the
+      {Serial} placeholder (-OnSerialProblem GenerateId, default). It is short (-FutureIdLength, default
+      8 characters from A-Z without I and O plus 2-9), is calculated stably from the MachineGuid and, on a
+      collision, is recalculated with the next counter value (up to 5 attempts). With -OnSerialProblem Skip
+      the device is skipped instead (exit code 5) or, on a collision, the run is aborted.
+
+    LOGGING
+      Every event is written to the central CSV log on the share (-CentralLogPath) and to the local log
+      (-LocalDir). If the share is unreachable, the entries stay in pending.csv and are delivered on the
+      next run; the reason is recorded in the local log as LOG_DELIVERY.
+      The central log is optional: with -NoCentralLog only the local log is written.
+
+    REPORTING
+      On every script end (not with -WhatIf) these values are written to HKLM:\SOFTWARE\HostRenameState, e.g.
+      to feed ACMP custom fields: LastRun (yyyy-MM-ddTHH:mm:sszzz), LastExitCode (DWORD), LastEvent (last event
+      code logged), Deployment (Gpo/Acmp), ScriptVersion. They are for reporting only; the script logic never
+      reads them. A failure to write them never changes the exit code. The marker key HKLM:\SOFTWARE\HostRename
+      is not touched by this.
+
+    REQUIREMENTS
+      - Run as SYSTEM or with administrator rights in 64-bit PowerShell.
+      - AD permissions: the computer account (SELF) needs write permissions on its own object (cn, name,
+        sAMAccountName, displayName, Account Restrictions, Reset password, and the Validated Writes for DNS
+        host name and SPN), or -DomainCredential is used. Prepare-HostRename.ps1 sets them up via delegation.
+      - Central log: domain computers need to write and append data as well as read and write attributes on
+        the log folder, but not read the contents.
+
+.PARAMETER NameTemplate
+    Name template with {Name} and/or {Serial}; takes precedence over -Prefix and -Suffix. Examples:
+      'DE{Serial}'          PC349219 -> DE<serial number>
+      'NG-{Name}'           PC349219 -> NG-PC349219 (equivalent to -Prefix "NG-")
+      'DE-{Serial:-8}'      DE- plus the last 8 characters of the serial number
+      '{Serial}-{Name:-4}'  serial number, hyphen, the last 4 characters of the old name
+    Fixed characters: A-Z, 0-9, _ and -.
+
+.PARAMETER Prefix
+    Prefix before the previous name, e.g. "NG-" (at most 10 characters; A-Z, 0-9, hyphen).
+
+.PARAMETER Suffix
+    Suffix after the previous name, e.g. "-W11" (at most 10 characters; A-Z, 0-9, hyphen).
+
+.PARAMETER OnTooLong
+    Behavior if the name resulting from the template would be longer than 15 characters:
+      TruncateEnd     shorten placeholder values at the end [default]
+      TruncateStart   shorten placeholder values at the start (keeps e.g. trailing sequence numbers)
+      Skip            do not rename (exit code 2)
+
+.PARAMETER OnSerialProblem
+    Behavior if the template contains {Serial} but the serial number is unusable or the target name
+    already exists in AD:
+      GenerateId      use a generated future ID instead of the serial number [default]
+      Skip            do not rename (exit code 5 or COLLISION)
+
+.PARAMETER FutureIdLength
+    Length of the generated future ID, 4 to 12 characters (default: 8).
+
+.PARAMETER CentralLogPath
+    Full path of the central CSV file on the share (UNC path \\server\share\...; a local path C:\... also works).
+    The default value is a placeholder; the GPO passes the real path from Prepare-HostRename.ps1. To run without
+    a central log, use -NoCentralLog. An empty or whitespace-only value and the literal '' or "" (which
+    powershell.exe -File passes for -CentralLogPath '') also disable it; any other value that is not an absolute
+    path disables it with the warning LOG_CHECK in the local log.
+
+.PARAMETER NoCentralLog
+    Disables the central log (takes precedence over -CentralLogPath): nothing is written to pending.csv, the
+    share is not checked, and a cleanup is never deferred because of log delivery (the local log files are then
+    kept). Recommended for ACMP runs without a central log.
+
+.PARAMETER DomainCredential
+    Optional: domain account with permission to rename the AD object. If omitted, the context of the
+    executing account applies (SYSTEM = computer account).
+
+.PARAMETER Reboot
+    Schedules a reboot with a warning period (-RebootDelaySeconds) after a successful rename.
+    Not used with -Deployment Acmp (ACMP controls the reboot): the switch is ignored and the warning
+    REBOOT_IGNORED is written to the local log on every run.
+
+.PARAMETER RebootDelaySeconds
+    Warning period for the reboot in seconds (default: 900).
+
+.PARAMETER Cleanup
+    After completion, removes the scheduled task (-TaskName), this script, the local log files and the
+    empty folder. Intended only for runs via scheduled task; do NOT specify it for manual runs, otherwise
+    the script file (e.g. on the share) is deleted.
+    With -Deployment Acmp the script file and its folder are never deleted (they belong to ACMP's cache) and
+    the task is removed only if it exists; the marker is set and the local log files are removed as above.
+
+.PARAMETER TaskName
+    Name of the scheduled task that is removed with -Cleanup (default: HostRename).
+
+.PARAMETER LocalDir
+    Local folder for rename-local.csv and pending.csv (default: <Program Files>\HostRename). Standard users
+    must not create or change anything there, so SYSTEM does not write to a folder that users can
+    manipulate. The GPO passes the folder into which it copies the script.
+    With -Deployment Acmp the default is <ProgramData>\HostRename. Because standard users may create folders in
+    ProgramData, the script protects this default folder before writing anything: if it exists, it must not be a
+    junction/symbolic link and must be owned by SYSTEM or Administrators, otherwise the script prints an ERROR
+    (LOCAL_DIR) and ends with exit code 1 without using it. It then sets owner Administrators, removes inheritance
+    and grants full control only to SYSTEM and Administrators (folder and the files in it); files in it must not be
+    reparse points and must be owned by SYSTEM or Administrators either.
+    An explicit -LocalDir is used as given (no checks): choose a folder that standard users cannot write to.
+
+.PARAMETER Deployment
+    Deployment method: Gpo (default, scheduled task deployed by GPO) or Acmp (run by the ACMP agent).
+    See DEPLOYMENT MODE above. The mode is logged in the START event and written to the state key.
+
+.EXAMPLE
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Prefix "NG-" -WhatIf
+
+    Dry run without changes: shows the target name for this device.
+
+.EXAMPLE
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Prefix "NG-" -Reboot
+
+    Renames and restarts after 15 minutes.
+
+.EXAMPLE
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -NameTemplate "DE{Serial}" -WhatIf
+
+    Preview of a rename by serial number: PC349219 -> DE<serial number>.
+
+.EXAMPLE
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -NoCentralLog
+
+    ACMP mode without a central log: local logs in C:\ProgramData\HostRename, no reboot is scheduled
+    (ACMP reacts to exit code 3010), the result is available in HKLM:\SOFTWARE\HostRenameState.
+    A 32-bit ACMP agent starts %SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe instead.
+
+.OUTPUTS
+    No pipeline output. The exit code describes the result:
+      0       nothing to do (name already matches the template) or -WhatIf
+      3010    renamed or rename pending, reboot required
+      1       error (details in the log; with LOCAL_DIR or PLATFORM only on stdout)
+      2       skipped: name too long (-OnTooLong Skip)
+      4       no permission to rename on the device's own AD object
+      5       no usable serial number (template with {Serial}, only with -OnSerialProblem Skip)
+
+.NOTES
+    Product          HostRename
+    Version          1.2.0
+    Date             2026-11-03
+    Execution        Scheduled task as SYSTEM (deployed via GPO), run by the ACMP agent as SYSTEM, or manually as administrator
+    Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)
+
+.LINK
+    README.md
+#>
+#Requires -Version 5.1
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [ValidatePattern('^$|^[A-Za-z0-9_{}:-]+$')]
+    [string]$NameTemplate = '',
+
+    [ValidatePattern('^$|^[A-Za-z0-9][A-Za-z0-9-]{0,9}$')]
+    [string]$Prefix = '',
+
+    [ValidatePattern('^$|^[A-Za-z0-9-]{1,10}$')]
+    [string]$Suffix = '',
+
+    [ValidateSet('TruncateStart', 'TruncateEnd', 'Skip')]
+    [string]$OnTooLong = 'TruncateEnd',
+
+    [ValidateSet('GenerateId', 'Skip')]
+    [string]$OnSerialProblem = 'GenerateId',
+
+    [ValidateRange(4, 12)]
+    [int]$FutureIdLength = 8,
+
+    [string]$CentralLogPath = '\\FILESERVER\HostRename$\log\rename-log.csv',
+
+    [switch]$NoCentralLog,
+
+    [pscredential]$DomainCredential,
+
+    [switch]$Reboot,
+
+    [int]$RebootDelaySeconds = 900,
+
+    [switch]$Cleanup,
+
+    [string]$TaskName = 'HostRename',
+
+    [string]$LocalDir = '',
+
+    [ValidateSet('Gpo', 'Acmp')]
+    [string]$Deployment = 'Gpo'
+)
+
+$ErrorActionPreference = 'Stop'
+$ScriptVersion = '1.2.0'   # must match the version in .NOTES (checked by HostRename.Local.Tests.ps1)
+$MaxLen     = 15
+$SelfPath    = $PSCommandPath   # path of this script (a variable so that tests can substitute it)
+
+function Resolve-LocalDir {
+    # Local folder for logs: explicit -LocalDir, otherwise per deployment mode (Gpo: Program Files, Acmp: ProgramData).
+    param([string]$Deployment, [string]$LocalDir)
+    if ($LocalDir) { return $LocalDir }
+    if ($Deployment -eq 'Acmp') { return (Join-Path $env:ProgramData 'HostRename') }
+    $programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+    Join-Path $programFiles 'HostRename'
+}
+
+function Resolve-CentralLogPath {
+    # Effective path of the central log: '' = disabled. Disabled by -NoCentralLog, by an empty or whitespace-only
+    # value, and by the literal '' or "" (powershell.exe -File passes -CentralLogPath '' as these two characters).
+    # A remaining value that is neither a UNC path (\\server\share...) nor a rooted local path (C:\...) is also
+    # disabled, with a warning: otherwise the log would be written relative to the working directory.
+    param([string]$Path, [switch]$NoCentralLog)
+    $res = [pscustomobject]@{ Path = ''; Warning = '' }
+    if ($NoCentralLog) { return $res }
+    $p = ([string]$Path).Trim()
+    if ($p -eq "''" -or $p -eq '""') { $p = '' }
+    if (-not $p) { return $res }
+    if ($p -match '^\\\\[^\\]+\\[^\\]+' -or $p -match '^[A-Za-z]:\\') { $res.Path = $p; return $res }
+    $res.Warning = "central log path '$p' is not an absolute path - central log disabled"
+    return $res
+}
+
+$explicitLocalDir = [bool]$LocalDir   # an explicit -LocalDir is used as given (Initialize-LocalDir only guards the ACMP default)
+$LocalDir   = Resolve-LocalDir -Deployment $Deployment -LocalDir $LocalDir
+$LocalLog   = Join-Path $LocalDir 'rename-local.csv'
+$PendingLog = Join-Path $LocalDir 'pending.csv'
+$CsvHeader  = 'Timestamp;Level;Event;ComputerName;TargetName;Serial;MachineGuid;Message'
+$regCN      = 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName'
+$MarkerKey  = 'HKLM:\SOFTWARE\HostRename'   # must match $MarkerRegistryKey in Prepare-HostRename.ps1
+$StateKey   = 'HKLM:\SOFTWARE\HostRenameState'   # remembers original name and target name (idempotency for templates with {Name} + {Serial})
+$centralLog = Resolve-CentralLogPath -Path $CentralLogPath -NoCentralLog:$NoCentralLog
+$CentralLogPath = $centralLog.Path   # '' = central log disabled (all functions below check this)
+$script:NoLocalLog = $false          # true only while the local folder must not be written to (Write-RenameLog then prints only)
+
+# ---- Device identity (stable keys for searching the log) --------------------
+$script:CurrentName = $env:COMPUTERNAME
+$script:TargetName  = ''
+$script:Serial      = ''
+$script:MachineGuid = ''
+try { $script:Serial      = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber }
+catch { Write-Verbose "Serial number (BIOS) not readable, the log stays without a serial number: $($_.Exception.Message)" }
+try { $script:MachineGuid = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Cryptography').MachineGuid }
+catch { Write-Verbose "MachineGuid not readable, the log stays without a MachineGuid: $($_.Exception.Message)" }
+
+# ---- Logging -----------------------------------------------------------------
+function ConvertTo-CsvField {
+    param([string]$Value)
+    '"' + (($Value -replace '[\r\n]+', ' ') -replace '"', '""') + '"'
+}
+
+function Send-PendingLog {
+    # Appends all lines not yet delivered to the central CSV.
+    # Exclusive write access (FileShare.Read) + retry so that parallel devices do not overwrite each other.
+    # No-op if the central log is disabled (-NoCentralLog, see Resolve-CentralLogPath).
+    if (-not $CentralLogPath) { return }
+    if (-not (Test-Path $PendingLog)) { return }
+    $lines = @(Get-Content -Path $PendingLog -Encoding UTF8 | Where-Object { $_ })
+    if ($lines.Count -eq 0) { return }
+
+    $lastError = ''
+    for ($i = 1; $i -le 6; $i++) {
+        try {
+            $fs = [System.IO.File]::Open($CentralLogPath,
+                    [System.IO.FileMode]::Append,
+                    [System.IO.FileAccess]::Write,
+                    [System.IO.FileShare]::Read)
+            try {
+                $sw = New-Object System.IO.StreamWriter($fs, (New-Object System.Text.UTF8Encoding($true)))
+                # Position instead of Length: after opening in append mode the position is at the end of the file; 0 = empty file.
+                # Length would need the "Read attributes" right, which computer accounts intentionally do not have on the log folder.
+                if ($fs.Position -eq 0) { $sw.WriteLine($CsvHeader) }
+                foreach ($l in $lines) { $sw.WriteLine($l) }
+                $sw.Flush()
+            }
+            finally { $fs.Dispose() }
+            Remove-Item -Path $PendingLog -Force
+            return
+        }
+        catch {
+            $lastError = $_.Exception.Message
+            Start-Sleep -Milliseconds (Get-Random -Minimum 300 -Maximum 1500)
+        }
+    }
+    # Share unreachable/locked: entries stay in pending.csv and are delivered on the next run.
+    # Record the reason locally once per run (otherwise the error stays invisible). -LocalOnly prevents recursion.
+    if (-not $script:deliveryWarned) {
+        $script:deliveryWarned = $true
+        Write-RenameLog -Level WARN -EventName LOG_DELIVERY -Message "Central log '$CentralLogPath' not writable: $lastError - entries stay in pending.csv and are delivered on the next run." -LocalOnly
+    }
+}
+
+function Write-RenameLog {
+    param(
+        [ValidateSet('INFO', 'WARN', 'ERROR')][string]$Level,
+        [string]$EventName,
+        [string]$Message,
+        [switch]$LocalOnly
+    )
+    $script:LastEvent = $EventName   # for the reporting values written at exit
+    $ts  = Get-Date -Format 'yyyy-MM-ddTHH:mm:sszzz'
+    $row = (@($ts, $Level, $EventName, $script:CurrentName, $script:TargetName,
+              $script:Serial, $script:MachineGuid, $Message) |
+            ForEach-Object { ConvertTo-CsvField ([string]$_) }) -join ';'
+
+    if (-not $script:NoLocalLog) {
+        if (-not (Test-Path $LocalLog)) { Set-Content -Path $LocalLog -Value $CsvHeader -Encoding UTF8 }
+        Add-Content -Path $LocalLog -Value $row -Encoding UTF8
+    }
+    Write-Output ('{0} [{1}] {2}: {3}' -f $ts, $Level, $EventName, $Message)
+
+    if (-not $LocalOnly -and -not $script:NoLocalLog -and $CentralLogPath) {
+        Add-Content -Path $PendingLog -Value $row -Encoding UTF8
+        Send-PendingLog
+    }
+}
+
+# ---- AD helper functions ------------------------------------------------------
+function ConvertTo-LdapEscaped {
+    param([string]$Value)
+    $Value.Replace('\', '\5c').Replace('*', '\2a').Replace('(', '\28').Replace(')', '\29')
+}
+
+function Test-AdComputerExists {
+    param([string]$Name)
+    $n = ConvertTo-LdapEscaped $Name
+    $searcher = [adsisearcher]"(&(objectCategory=computer)(|(sAMAccountName=$n`$)(name=$n)))"
+    return [bool]$searcher.FindOne()
+}
+
+function Test-AdRenamePermission {
+    <#
+      Uses the constructed AD attribute allowedAttributesEffective to check which attributes the
+      executing account (SYSTEM = computer account, or -DomainCredential) may WRITE on the computer
+      object. AD itself evaluates the ACL (including SELF and groups). cn and sAMAccountName are
+      decisive for a rename. The Validated Writes (DNS host name, SPN) cannot be checked reliably
+      this way; if they are missing, Rename-Computer reports the error.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$ComputerName,
+        [Parameter(Mandatory)][string]$DomainName,
+        [pscredential]$Credential
+    )
+    $required = @('cn', 'sAMAccountName')
+    $relevant = @('cn', 'name', 'sAMAccountName', 'displayName', 'dNSHostName', 'servicePrincipalName')
+
+    $n      = ConvertTo-LdapEscaped $ComputerName
+    $filter = "(&(objectCategory=computer)(sAMAccountName=$n`$))"
+    if ($Credential) {
+        $root     = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$DomainName", $Credential.UserName, $Credential.GetNetworkCredential().Password)
+        $searcher = New-Object System.DirectoryServices.DirectorySearcher($root, $filter)
+    }
+    else {
+        $searcher = [adsisearcher]$filter
+    }
+    [void]$searcher.PropertiesToLoad.AddRange(@('distinguishedName', 'allowedAttributesEffective'))
+    $res = $searcher.FindOne()
+
+    if (-not $res) {
+        return [pscustomobject]@{ Found = $false; Inconclusive = $false; Dn = $null; Writable = @(); Missing = $required }
+    }
+
+    $dn       = [string]$res.Properties['distinguishedname'][0]
+    $writable = @($res.Properties['allowedattributeseffective'] | ForEach-Object { [string]$_ })
+    $missing  = @($required | Where-Object { $writable -notcontains $_ })
+
+    [pscustomobject]@{
+        Found        = $true
+        Inconclusive = ($writable.Count -eq 0)    # empty = result cannot be evaluated
+        Dn           = $dn
+        Writable     = @($writable | Where-Object { $relevant -contains $_ })
+        Missing      = $missing
+    }
+}
+
+# ---- Cleanup --------------------------------------------------------------------
+function Test-LogPending {
+    if (-not $CentralLogPath) { return $false }   # central log disabled: nothing can be pending
+    if (-not (Test-Path $PendingLog)) { return $false }
+    return (@(Get-Content -Path $PendingLog -Encoding UTF8 | Where-Object { $_ }).Count -gt 0)
+}
+
+function Invoke-Cleanup {
+    # Removes the scheduled task, the script, local log files and the (empty) folder.
+    # With -Deployment Acmp the script file and its folder are never removed (they belong to ACMP's cache).
+    # Without a central log the local log files are kept (they are the only evidence) and nothing is deferred.
+    # Returns: $true = cleaned up, $false = deferred/failed.
+    # Errors here must never affect the result of the rename.
+    try {
+        $acmp       = ($Deployment -eq 'Acmp')
+        $centralOn  = [bool]$CentralLogPath
+        $logsNote   = if ($centralOn) { 'Local log files are removed once everything has been delivered.' } else { 'Local log files are kept (central log disabled).' }
+
+        # 1) First deliver all log entries to the share - afterwards no task remains that could deliver them later
+        Send-PendingLog
+        if (Test-LogPending) {
+            Write-RenameLog -Level WARN -EventName CLEANUP_DEFERRED -Message 'Log entries have not yet arrived on the share - cleanup will be made up for on the next run.' -LocalOnly
+            return $false
+        }
+
+        # 2) Log the start of the cleanup centrally and make sure the entry has arrived
+        if ($acmp)          { $msg = "Cleanup (ACMP): setting the completion marker and removing scheduled task '$TaskName' if it exists; the script file is kept. $logsNote" }
+        elseif ($centralOn) { $msg = "Removing scheduled task '$TaskName', script and local log files." }
+        else                { $msg = "Removing scheduled task '$TaskName' and script. $logsNote" }
+        Write-RenameLog -Level INFO -EventName CLEANUP -Message $msg
+        if (Test-LogPending) {
+            Write-RenameLog -Level WARN -EventName CLEANUP_DEFERRED -Message 'Log entries have not yet arrived on the share - cleanup will be made up for on the next run.' -LocalOnly
+            return $false
+        }
+
+        # 3) Set the marker: if the marker exists, the GPO does not recreate script and task
+        New-Item -Path $MarkerKey -Force | Out-Null
+        Set-ItemProperty -Path $MarkerKey -Name 'Completed'    -Value (Get-Date -Format 'yyyy-MM-ddTHH:mm:sszzz')
+        Set-ItemProperty -Path $MarkerKey -Name 'ComputerName' -Value ([string]$script:TargetName)
+
+        # 4) Remove the task first (an orphaned task would be worse than an orphaned file)
+        $taskRemoved = $false
+        if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+            Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+            $taskRemoved = $true
+        }
+
+        # 5) Remove the script (not in ACMP mode: the file lives in ACMP's cache)
+        $scriptDir = $null
+        if ($SelfPath) { $scriptDir = Split-Path -Path $SelfPath -Parent }
+        if (-not $acmp -and $SelfPath -and (Test-Path $SelfPath)) {
+            Remove-Item -Path $SelfPath -Force
+        }
+        if ($acmp) {
+            $taskText = if ($taskRemoved) { "scheduled task '$TaskName' removed" } else { "no scheduled task '$TaskName' found" }
+            Write-RenameLog -Level INFO -EventName CLEANUP_DONE -Message "Cleanup (ACMP) done: marker set, $taskText, script file kept. $logsNote"
+        }
+        elseif ($centralOn) {
+            Write-RenameLog -Level INFO -EventName CLEANUP_DONE -Message "Scheduled task '$TaskName' and script were removed."
+        }
+        else {
+            Write-RenameLog -Level INFO -EventName CLEANUP_DONE -Message "Scheduled task '$TaskName' and script were removed. $logsNote"
+        }
+
+        # 6) Remove local log files and empty folders - but only if everything (including CLEANUP_DONE) has arrived on the share.
+        #    Otherwise (or without a central log) the local logs are kept as evidence.
+        if ($centralOn -and -not (Test-LogPending)) {
+            Remove-Item -Path $LocalLog, $PendingLog -Force -ErrorAction SilentlyContinue
+            # In ACMP mode never touch the script's folder
+            $dirs = if ($acmp) { @($LocalDir) | Where-Object { $_ -and $_ -ne $scriptDir } } else { @($scriptDir, $LocalDir) }
+            foreach ($dir in $dirs | Where-Object { $_ } | Select-Object -Unique) {
+                if ((Test-Path $dir) -and -not (Get-ChildItem -Path $dir -Force -ErrorAction SilentlyContinue)) {
+                    Remove-Item -Path $dir -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+        return $true
+    }
+    catch {
+        Write-RenameLog -Level WARN -EventName CLEANUP_FAILED -Message "Cleanup failed: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# ---- Check central log ---------------------------------------------------------------
+function Resolve-HostAddress {
+    # Distinct addresses of a host in resolver order (throws if the name cannot be resolved).
+    param([Parameter(Mandatory)][string]$ComputerName)
+    $seen = @{}
+    foreach ($a in [System.Net.Dns]::GetHostAddresses($ComputerName)) {
+        $k = $a.ToString()
+        if (-not $seen.ContainsKey($k)) { $seen[$k] = $true; $a }
+    }
+}
+
+function Connect-TcpAddress {
+    # True if a TCP connection to the address succeeds within the timeout (socket with the address's own family).
+    param([Parameter(Mandatory)][System.Net.IPAddress]$Address, [int]$Port, [int]$TimeoutMs = 3000)
+    $tcp = $null
+    try {
+        $tcp = New-Object System.Net.Sockets.TcpClient -ArgumentList $Address.AddressFamily   # throws on a host without IPv6
+        $iar = $tcp.BeginConnect($Address, $Port, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
+        $tcp.EndConnect($iar)
+        return $true
+    }
+    catch { return $false }
+    finally { if ($tcp) { $tcp.Close() } }
+}
+
+function Test-CentralLog {
+    # Checks in three stages whether the central log is reachable and writable for this account, without writing anything:
+    #   1) name resolution of the server  2) TCP port 445 (SMB)  3) open the file for appending (share and NTFS permission)
+    # Returns Ok, the stage that failed and an error message. The result is for diagnostics in the local log only.
+    param([string]$Path = $CentralLogPath)
+    $res = [pscustomobject]@{ Ok = $false; Stage = ''; Error = '' }
+
+    if ($Path -match '^\\\\([^\\]+)\\') {
+        $server = $Matches[1]
+        try { $addrs = @(Resolve-HostAddress -ComputerName $server) }
+        catch { $res.Stage = 'NameResolution'; $res.Error = "Server '$server' cannot be resolved ($($_.Exception.Message))"; return $res }
+        if (-not $addrs.Count) { $res.Stage = 'NameResolution'; $res.Error = "Server '$server' resolves to no address"; return $res }
+
+        # One socket per address with its own address family: the default TcpClient is IPv4 only in .NET Framework,
+        # which would report a false SmbPort failure over IPv6-only paths (DirectAccess). At most 3 addresses, 3 s each.
+        $fails = @()
+        $connected = $false
+        foreach ($addr in ($addrs | Select-Object -First 3)) {
+            if (Connect-TcpAddress -Address $addr -Port 445 -TimeoutMs 3000) { $connected = $true; break }
+            $fails += [string]$addr
+        }
+        if (-not $connected) { $res.Stage = 'SmbPort'; $res.Error = "Port 445 on '$server' is not responding (tried $($fails -join ', '); timeout 3 s each)"; return $res }
+    }
+
+    try {
+        $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+        $fs.Dispose()
+        $res.Ok = $true
+    }
+    catch [System.UnauthorizedAccessException] {
+        $res.Stage = 'Access'; $res.Error = "Access denied: check the share and NTFS write permission for domain computers ($($_.Exception.Message))"
+    }
+    catch [System.IO.DirectoryNotFoundException] {
+        $res.Stage = 'Path'; $res.Error = "Folder or share not found ($($_.Exception.Message))"
+    }
+    catch {
+        $res.Stage = 'Open'; $res.Error = $_.Exception.Message
+    }
+    return $res
+}
+
+# ---- Secure channel -------------------------------------------------------------
+function Test-SecureChannel {
+    # Test-ComputerSecureChannel exists in Windows PowerShell 5.1 and in newer PowerShell 7 versions;
+    # otherwise fall back to nltest (exit code 0 = secure channel OK).
+    param([string]$Domain)
+    if (Get-Command Test-ComputerSecureChannel -ErrorAction SilentlyContinue) { return [bool](Test-ComputerSecureChannel) }
+    $null = & nltest.exe "/sc_verify:$Domain" 2>&1
+    return ($LASTEXITCODE -eq 0)
+}
+
+# ---- Name template ---------------------------------------------------------------
+function Get-DeviceSerial {
+    # Returns the first usable serial number (A-Z/0-9 only): BIOS, then system product, then baseboard.
+    # Discarded are values that are too short (< 4 characters), manufacturer placeholders and single-character values.
+    $placeholder = @('TOBEFILLEDBYOEM', 'DEFAULTSTRING', 'SYSTEMSERIALNUMBER', 'SERIALNUMBER', 'NONE', 'NA', 'UNKNOWN',
+                     'NOTAVAILABLE', 'NOTSPECIFIED', 'OEM', 'OEMSTRING', '123456789', '1234567890', '0123456789')
+    $sources = @(
+        @{ Name = 'BIOS';                  Get = { (Get-CimInstance -ClassName Win32_BIOS).SerialNumber } },
+        @{ Name = 'ComputerSystemProduct'; Get = { (Get-CimInstance -ClassName Win32_ComputerSystemProduct).IdentifyingNumber } },
+        @{ Name = 'BaseBoard';             Get = { (Get-CimInstance -ClassName Win32_BaseBoard).SerialNumber } }
+    )
+    $rejected = @()
+    foreach ($src in $sources) {
+        $raw   = try { [string](& $src.Get) } catch { '' }
+        $clean = ($raw -replace '[^A-Za-z0-9]', '').ToUpper()
+        $valid = ($clean.Length -ge 4) -and ($placeholder -notcontains $clean) -and (@($clean.ToCharArray() | Select-Object -Unique).Count -gt 1)
+        if ($valid) { return [pscustomobject]@{ Value = $clean; Source = $src.Name; Raw = $raw; Rejected = $rejected } }
+        $rejected += ('{0}: "{1}"' -f $src.Name, $raw)
+    }
+    [pscustomobject]@{ Value = $null; Source = $null; Raw = ''; Rejected = $rejected }
+}
+
+function New-FutureId {
+    # Short, stable future ID from a seed value (MachineGuid): same input = same ID, so that repeated
+    # runs produce the same name. Alphabet without ambiguous characters (no I, O, 0, 1). -Attempt produces a
+    # different ID on a collision. Digits-only IDs are avoided (computer names must not consist of digits only).
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Only generates a string, does not change any system state (like New-Guid).')]
+    param(
+        [Parameter(Mandatory)][string]$Seed,
+        [ValidateRange(4, 12)][int]$Length = 8,
+        [int]$Attempt = 0
+    )
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'          # 32 characters: 256 is divisible by 32, hence uniformly distributed
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        for ($inner = 0; $inner -lt 20; $inner++) {
+            $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes(('{0}|{1}|{2}' -f $Seed, $Attempt, $inner)))
+            $id = -join (0..($Length - 1) | ForEach-Object { $alphabet[$bytes[$_] % 32] })
+            if ($id -notmatch '^[0-9]+$') { return $id }
+        }
+        return $id
+    }
+    finally { $sha.Dispose() }
+}
+
+function Resolve-NameTemplate {
+    # Builds the target name from the template. Placeholders: {Name}, {Serial}, optionally with :N (first N) or :-N (last N).
+    # Names that are too long: only the placeholder values are shortened (last placeholder first, at least 1 character remains).
+    param(
+        [Parameter(Mandatory)][string]$Template,
+        [Parameter(Mandatory)][string]$CurrentName,
+        [string]$Serial = '',
+        [int]$MaxLength = 15,
+        [string]$OnTooLong = 'TruncateEnd'
+    )
+    $res  = [pscustomobject]@{ Ok = $false; Name = ''; Full = ''; Truncated = $false; Code = ''; Error = '' }
+    $segs = New-Object System.Collections.ArrayList
+    $pos  = 0
+    $rx   = [regex]::Matches($Template, '\{(?<tok>NAME|SERIAL)(?::(?<n>-?\d+))?\}', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    foreach ($m in $rx) {
+        if ($m.Index -gt $pos) { [void]$segs.Add(@{ Kind = 'lit'; Text = $Template.Substring($pos, $m.Index - $pos) }) }
+        $val = if ($m.Groups['tok'].Value -ieq 'NAME') { [string]$CurrentName } else { [string]$Serial }
+        if ($m.Groups['n'].Success) {
+            $n = [int]$m.Groups['n'].Value
+            if ($n -ne 0 -and [math]::Abs($n) -lt $val.Length) {
+                $val = if ($n -gt 0) { $val.Substring(0, $n) } else { $val.Substring($val.Length + $n) }
+            }
+        }
+        [void]$segs.Add(@{ Kind = 'tok'; Text = $val })
+        $pos = $m.Index + $m.Length
+    }
+    if ($pos -lt $Template.Length) { [void]$segs.Add(@{ Kind = 'lit'; Text = $Template.Substring($pos) }) }
+
+    foreach ($sg in $segs) {
+        if ($sg.Kind -eq 'lit' -and $sg.Text -match '[{}]') {
+            $res.Code  = 'TEMPLATE'
+            $res.Error = "Unknown placeholder in template '$Template' (allowed: {Name}, {Serial}, each with :N or :-N)."
+            return $res
+        }
+        if ($sg.Kind -eq 'tok' -and [string]::IsNullOrEmpty($sg.Text)) {
+            $res.Code  = 'TEMPLATE'
+            $res.Error = "A placeholder in template '$Template' yields an empty value."
+            return $res
+        }
+    }
+
+    $join = { ($segs | ForEach-Object { $_.Text }) -join '' }
+    $full = & $join
+    $res.Full = $full.ToUpper()
+
+    if ($full.Length -gt $MaxLength) {
+        $res.Truncated = $true
+        if ($OnTooLong -eq 'Skip') {
+            $res.Code  = 'TOO_LONG'
+            $res.Error = "Target name '$($res.Full)' has $($full.Length) characters (max. $MaxLength). Skipped."
+            return $res
+        }
+        for ($i = $segs.Count - 1; $i -ge 0; $i--) {
+            $excess = (& $join).Length - $MaxLength
+            if ($excess -le 0) { break }
+            $sg = $segs[$i]
+            if ($sg.Kind -ne 'tok') { continue }
+            $cut = [math]::Min($excess, $sg.Text.Length - 1)
+            if ($cut -le 0) { continue }
+            $sg.Text = if ($OnTooLong -eq 'TruncateEnd') { $sg.Text.Substring(0, $sg.Text.Length - $cut) } else { $sg.Text.Substring($cut) }
+            $trimmed = $sg.Text.Trim('-')                       # no hyphen at the cut edges
+            if ($trimmed) { $sg.Text = $trimmed }
+        }
+        $full = & $join
+        if ($full.Length -gt $MaxLength) {
+            $res.Code  = 'TRUNCATE'
+            $res.Error = "Target name is still too long after shortening ($($full.Length) characters, max. $MaxLength). Template '$Template' contains too many fixed characters."
+            return $res
+        }
+    }
+
+    $name = $full.ToUpper()
+    if ($name -notmatch '^[A-Z0-9_]([A-Z0-9_-]*[A-Z0-9_])?$' -or $name -match '^[0-9]+$') {
+        $res.Code  = 'NAME_INVALID'
+        $res.Error = "Target name '$name' is invalid (allowed: A-Z, 0-9, _ and -; must not start or end with -; not digits only)."
+        return $res
+    }
+    $res.Ok   = $true
+    $res.Name = $name
+    $res
+}
+
+function Get-RenameState {
+    if (Test-Path $StateKey) { Get-ItemProperty -Path $StateKey } else { $null }
+}
+
+function Set-RenameState {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Helper function: the confirmation prompt (ShouldProcess) happens in the main flow before the rename.')]
+    param([string]$Original, [string]$Target, [string]$Template, [string]$FutureId = '')
+    New-Item -Path $StateKey -Force | Out-Null
+    Set-ItemProperty -Path $StateKey -Name 'FutureId'     -Value $FutureId
+    Set-ItemProperty -Path $StateKey -Name 'OriginalName' -Value $Original
+    Set-ItemProperty -Path $StateKey -Name 'TargetName'   -Value $Target
+    Set-ItemProperty -Path $StateKey -Name 'Template'     -Value $Template
+    Set-ItemProperty -Path $StateKey -Name 'Applied'      -Value (Get-Date -Format 'yyyy-MM-ddTHH:mm:sszzz')
+}
+
+# ---- Reporting and exit -------------------------------------------------------
+function Save-RunState {
+    # Writes the reporting values of this run to the state key (e.g. for ACMP custom fields). Never throws.
+    # Reporting only: nothing in the script reads these values (Get-RenameState uses TargetName/Template only).
+    # Not written with -WhatIf. The marker key $MarkerKey is deliberately not touched.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Reporting helper; WhatIf is handled explicitly (nothing is written).')]
+    param([Parameter(Mandatory)][int]$Code)
+    if ($WhatIfPreference) { return }
+    try {
+        if (-not (Test-Path $StateKey)) { New-Item -Path $StateKey -Force | Out-Null }
+        Set-ItemProperty -Path $StateKey -Name 'LastRun'       -Value (Get-Date -Format 'yyyy-MM-ddTHH:mm:sszzz') -Type String
+        Set-ItemProperty -Path $StateKey -Name 'LastExitCode'  -Value $Code -Type DWord
+        Set-ItemProperty -Path $StateKey -Name 'LastEvent'     -Value ([string]$script:LastEvent) -Type String
+        Set-ItemProperty -Path $StateKey -Name 'Deployment'    -Value $Deployment -Type String
+        Set-ItemProperty -Path $StateKey -Name 'ScriptVersion' -Value $ScriptVersion -Type String
+    }
+    catch {
+        # Must never change the exit code. The local log may be gone (cleanup) - then stay silent.
+        try { Write-RenameLog -Level WARN -EventName STATE -Message "Run state could not be saved: $($_.Exception.Message)" -LocalOnly | Out-Null }
+        catch { Write-Verbose "Run state and its log entry could not be saved: $($_.Exception.Message)" }
+    }
+}
+
+function Exit-HostRename {
+    # Single exit point: records the result (Save-RunState) and ends the script with the given exit code.
+    # -SkipState: write no reporting values (32-bit process on 64-bit Windows: they would land in WOW6432Node).
+    param([Parameter(Mandatory)][int]$Code, [switch]$SkipState)
+    if (-not $SkipState) { Save-RunState -Code $Code }
+    exit $Code
+}
+
+# ---- Platform and local folder (ACMP mode) ----------------------------------------
+function Test-Wow64Process {
+    # True for a 32-bit process on 64-bit Windows (e.g. a 32-bit ACMP agent starting SysWOW64\powershell.exe).
+    # Registry writes to HKLM:\SOFTWARE would then be redirected to WOW6432Node.
+    [Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess
+}
+
+function Get-OwnerSid {
+    # Owner of a file or folder as a SID string (language-independent).
+    param([Parameter(Mandatory)][string]$Path)
+    (Get-Acl -LiteralPath $Path).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+}
+
+function Set-LocalDirAcl {
+    # Protected ACL: owner Administrators, inheritance removed, full control only for SYSTEM and Administrators.
+    # icacls with SID notation (language-independent, like the icacls actions in Prepare-HostRename.ps1).
+    # Any other explicit entry (SID other than SYSTEM/Administrators) is removed. Throws on an icacls error.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal helper; Initialize-LocalDir does not call it under -WhatIf.')]
+    param([Parameter(Mandatory)][string]$Path, [switch]$Container)
+    $inherit = if ($Container) { '(OI)(CI)' } else { '' }
+    & icacls.exe $Path /setowner '*S-1-5-32-544' /C /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "icacls /setowner on '$Path' failed (exit code $LASTEXITCODE)" }
+    & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-18:${inherit}F" "*S-1-5-32-544:${inherit}F" /C /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "icacls /inheritance:r /grant:r on '$Path' failed (exit code $LASTEXITCODE)" }
+    $foreign = @((Get-Acl -LiteralPath $Path).GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier]) |
+        ForEach-Object { $_.IdentityReference.Value } |
+        Where-Object { $_ -ne 'S-1-5-18' -and $_ -ne 'S-1-5-32-544' } | Select-Object -Unique)
+    foreach ($sid in $foreign) {
+        & icacls.exe $Path /remove "*$sid" /C /Q | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "icacls /remove *$sid on '$Path' failed (exit code $LASTEXITCODE)" }
+    }
+}
+
+function Initialize-LocalDir {
+    # Guards the default local folder of ACMP mode (<ProgramData>\HostRename): standard users may create folders and
+    # files in ProgramData, so the folder could have been prepared by a user (junction/symbolic link, own ACL) to make
+    # SYSTEM write to or delete other files. Before anything is written:
+    #   - an existing folder must not be a reparse point and must be owned by SYSTEM or Administrators;
+    #   - a missing folder is created (and must still be empty once it is locked);
+    #   - the folder gets a protected ACL (Set-LocalDirAcl), then every entry in it is checked the same way
+    #     (no reparse point, owner SYSTEM/Administrators) and gets the protected ACL too.
+    # Under -WhatIf nothing is created or changed (nothing is written then), the checks still run.
+    # Returns '' if the folder can be used, otherwise the reason. Never throws.
+    param([Parameter(Mandatory)][string]$Path)
+    $allowed = @('S-1-5-18', 'S-1-5-32-544')
+    $reparse = [System.IO.FileAttributes]::ReparsePoint
+    $created = $false
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) {
+            if ($WhatIfPreference) { return '' }
+            try { New-Item -ItemType Directory -Path $Path -ErrorAction Stop | Out-Null; $created = $true }
+            catch { if (-not (Test-Path -LiteralPath $Path)) { throw } }   # created in parallel: the checks below decide
+        }
+        $folder = Get-Item -LiteralPath $Path -Force
+        if ($folder.Attributes -band $reparse) { return "local folder '$Path' is a reparse point (junction or symbolic link)" }
+        if (-not $folder.PSIsContainer) { return "local folder '$Path' is not a folder" }
+        $owner = Get-OwnerSid -Path $Path
+        if ($allowed -notcontains $owner) { return "owner of local folder '$Path' is $owner (expected S-1-5-18 or S-1-5-32-544)" }
+        if (-not $WhatIfPreference) { Set-LocalDirAcl -Path $Path -Container }
+        # Entries are checked after the folder is locked, so no new ones can appear in between.
+        # A folder created by this run must still be empty: anything in it was placed there by someone else before the lock.
+        $items = @(Get-ChildItem -LiteralPath $Path -Force)
+        if ($created -and $items.Count) { return "local folder '$Path' was just created but already contains '$($items[0].Name)'" }
+        foreach ($item in $items) {
+            if ($item.Attributes -band $reparse) { return "'$($item.FullName)' in the local folder is a reparse point (junction or symbolic link)" }
+            $owner = Get-OwnerSid -Path $item.FullName
+            if ($allowed -notcontains $owner) { return "owner of '$($item.FullName)' in the local folder is $owner (expected S-1-5-18 or S-1-5-32-544)" }
+            if (-not $WhatIfPreference) { Set-LocalDirAcl -Path $item.FullName -Container:$item.PSIsContainer }
+        }
+        return ''
+    }
+    catch { return "local folder '$Path' could not be secured: $($_.Exception.Message)" }
+}
+
+# ---- Start: platform check and local folder ----------------------------------------
+if ($Deployment -eq 'Acmp' -and (Test-Wow64Process)) {
+    # Before anything is written: logs and reporting values would land in the wrong places (WOW6432Node).
+    $script:NoLocalLog = $true
+    Write-RenameLog -Level ERROR -EventName PLATFORM -Message 'HostRename runs in a 32-bit PowerShell on 64-bit Windows; registry values would be redirected to WOW6432Node. Start %SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe from the 32-bit ACMP agent. Nothing was changed.' -LocalOnly
+    Exit-HostRename -Code 1 -SkipState
+}
+
+if ($Deployment -eq 'Acmp' -and -not $explicitLocalDir) {
+    $localDirError = Initialize-LocalDir -Path $LocalDir
+    if ($localDirError) {
+        # Do not write to this folder at all; stdout (ACMP output) and the reporting values carry the error
+        $script:NoLocalLog = $true
+        Write-RenameLog -Level ERROR -EventName LOCAL_DIR -Message "$localDirError - the folder is not used; nothing was changed. Remove or fix it as administrator." -LocalOnly
+        Exit-HostRename -Code 1
+    }
+}
+else {
+    try {
+        if (-not (Test-Path $LocalDir)) { New-Item -ItemType Directory -Path $LocalDir -Force | Out-Null }
+    }
+    catch {
+        # e.g. manual run without administrator rights: fall back to the temp folder
+        $LocalDir   = Join-Path $env:TEMP 'HostRename'
+        $LocalLog   = Join-Path $LocalDir 'rename-local.csv'
+        $PendingLog = Join-Path $LocalDir 'pending.csv'
+        New-Item -ItemType Directory -Path $LocalDir -Force | Out-Null
+    }
+}
+
+if ($centralLog.Warning) {
+    Write-RenameLog -Level WARN -EventName LOG_CHECK -Message $centralLog.Warning -LocalOnly
+}
+
+# ---- Main logic ----------------------------------------------------------------
+try {
+    $active  = (Get-ItemProperty "$regCN\ActiveComputerName").ComputerName   # currently effective
+    $pending = (Get-ItemProperty "$regCN\ComputerName").ComputerName         # effective after reboot
+    $script:CurrentName = $active
+
+    # ACMP controls the reboot: report an ignored -Reboot on every run (also when nothing is to do or a reboot is pending)
+    if ($Reboot -and $Deployment -eq 'Acmp') {
+        Write-RenameLog -Level WARN -EventName REBOOT_IGNORED -Message 'Parameter -Reboot is ignored with -Deployment Acmp (ACMP controls the reboot); exit code 3010 signals that a reboot is required.' -LocalOnly
+    }
+
+    # 0) Determine the name template: -NameTemplate takes precedence, otherwise "Prefix{Name}Suffix"
+    $Template = if ($NameTemplate) { $NameTemplate } elseif ($Prefix -or $Suffix) { '{0}{{Name}}{1}' -f $Prefix, $Suffix } else { '' }
+    if (-not $Template) {
+        Write-RenameLog -Level ERROR -EventName CONFIG -Message 'Neither -NameTemplate nor -Prefix/-Suffix specified - nothing to do.'
+        Exit-HostRename -Code 1
+    }
+    $Template   = $Template.ToUpper()
+    $usesName   = $Template -match '\{NAME(:-?\d+)?\}'
+    $usesSerial = $Template -match '\{SERIAL(:-?\d+)?\}'
+    $serialInfo = if ($usesSerial) { Get-DeviceSerial } else { $null }
+    $state      = Get-RenameState
+
+    # 1) Already done or rename pending? (no DC connection needed)
+    $done = $false
+    if ($state -and ($state.Template -ieq $Template) -and $state.TargetName -and ($pending -ieq $state.TargetName)) {
+        $done = $true                                           # target name set by HostRename with exactly this template
+    }
+    elseif (-not $usesSerial -and $Template -match '^(?<pre>[A-Z0-9_-]*)\{NAME\}(?<suf>[A-Z0-9_-]*)$') {
+        # Prefix/suffix mode: devices that have already been renamed are recognized by the pattern
+        $pre = $Matches['pre']; $suf = $Matches['suf']
+        if ($pre -or $suf) {
+            $done = (-not $pre -or $pending.StartsWith($pre, [StringComparison]::OrdinalIgnoreCase)) -and
+                    (-not $suf -or $pending.EndsWith($suf, [StringComparison]::OrdinalIgnoreCase))
+        }
+    }
+    elseif (-not $usesName -and $serialInfo -and $serialInfo.Value) {
+        # Template without {Name} (e.g. DE{Serial}): the target name is independent of the old name
+        $probe = Resolve-NameTemplate -Template $Template -CurrentName $active -Serial $serialInfo.Value -MaxLength $MaxLen -OnTooLong $OnTooLong
+        $done  = $probe.Ok -and ($pending -ieq $probe.Name)
+    }
+
+    if ($done) {
+        $script:TargetName = $pending
+        if ($active -ne $pending) {
+            Write-RenameLog -Level WARN -EventName PENDING_REBOOT -Message "Rename to '$pending' is already pending - reboot required."
+            if ($Cleanup) { [void](Invoke-Cleanup) }
+            Exit-HostRename -Code 3010
+        }
+        # Log locally only, so the central log is not cluttered on every start
+        Write-RenameLog -Level INFO -EventName ALREADY_DONE -Message "Host name already matches template '$Template' - nothing to do." -LocalOnly
+        if ($Cleanup) { [void](Invoke-Cleanup) }
+        Exit-HostRename -Code 0
+    }
+
+    Write-RenameLog -Level INFO -EventName START -Message "HostRename ${ScriptVersion}: deployment $Deployment, template '$Template', mode for names that are too long: $OnTooLong"
+
+    # 1a) Check the central log. Diagnostics only: the rename also runs without a central log, the entries are then delivered later
+    #     and the cleanup waits. The result is only written to the local log, because the central one may be unusable.
+    $logCheck = if ($CentralLogPath) { Test-CentralLog } else { $null }
+    if (-not $CentralLogPath) { Write-RenameLog -Level INFO -EventName LOG_CHECK -Message 'Central log is disabled (-NoCentralLog or no usable -CentralLogPath); only the local log is written.' -LocalOnly }
+    elseif ($logCheck.Ok) { Write-RenameLog -Level INFO -EventName LOG_CHECK -Message "Central log '$CentralLogPath' is reachable and writable." -LocalOnly }
+    else              { Write-RenameLog -Level WARN -EventName LOG_CHECK -Message "Central log '$CentralLogPath' not usable (stage: $($logCheck.Stage)): $($logCheck.Error). Entries stay in pending.csv and will be delivered later." -LocalOnly }
+
+    if ($active -ne $pending) {
+        Write-RenameLog -Level ERROR -EventName PRECHECK -Message "Another rename ('$pending') is pending. Please reboot first."
+        Exit-HostRename -Code 1
+    }
+
+    # 1b) Check the serial number (only if the template uses it); on problems use a future ID if applicable
+    $serialValue = ''
+    $idUsed      = $false
+    $futureId    = ''
+    # Seed of the ID: must be stable across renames (MachineGuid, otherwise BIOS UUID) - never the computer name
+    $idSeed      = $script:MachineGuid
+    if ($usesSerial -and -not $idSeed) { $idSeed = try { [string](Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID } catch { '' } }
+    if ($usesSerial) {
+        if ($serialInfo.Value) {
+            $serialValue = $serialInfo.Value
+            Write-RenameLog -Level INFO -EventName SERIAL -Message "Serial number '$serialValue' (source: $($serialInfo.Source))."
+        }
+        elseif ($OnSerialProblem -eq 'GenerateId' -and -not $idSeed) {
+            Write-RenameLog -Level ERROR -EventName SERIAL_INVALID -Message "No usable serial number ($($serialInfo.Rejected -join '; ')) and no MachineGuid/UUID for a stable ID. Skipped."
+            Exit-HostRename -Code 5
+        }
+        elseif ($OnSerialProblem -eq 'GenerateId') {
+            $futureId    = New-FutureId -Seed $idSeed -Length $FutureIdLength -Attempt 0
+            $serialValue = $futureId
+            $idUsed      = $true
+            Write-RenameLog -Level WARN -EventName SERIAL_FALLBACK -Message "No usable serial number ($($serialInfo.Rejected -join '; ')) - using generated ID '$futureId' (from the MachineGuid)."
+        }
+        else {
+            Write-RenameLog -Level ERROR -EventName SERIAL_INVALID -Message "No usable serial number found ($($serialInfo.Rejected -join '; ')). Skipped."
+            Exit-HostRename -Code 5
+        }
+    }
+
+    # 2) Check domain and secure channel
+    $cs = Get-CimInstance -ClassName Win32_ComputerSystem
+    if (-not $cs.PartOfDomain) {
+        Write-RenameLog -Level ERROR -EventName PRECHECK -Message 'Device is not a member of a domain.'
+        Exit-HostRename -Code 1
+    }
+    if (-not (Test-SecureChannel -Domain $cs.Domain)) {
+        Write-RenameLog -Level ERROR -EventName PRECHECK -Message "Secure channel to domain '$($cs.Domain)' is not intact or DC is unreachable."
+        Exit-HostRename -Code 1
+    }
+
+    # 2b) Check the permission to rename on the device's own AD object (before anything is changed)
+    $perm = Test-AdRenamePermission -ComputerName $active -DomainName $cs.Domain -Credential $DomainCredential
+    $permContext = if ($DomainCredential) { $DomainCredential.UserName } else { 'computer account (SELF)' }
+    if (-not $perm.Found) {
+        Write-RenameLog -Level ERROR -EventName PERM_CHECK -Message "Computer object '$active`$' was not found in AD - permission check not possible."
+        Exit-HostRename -Code 1
+    }
+    elseif ($perm.Inconclusive) {
+        Write-RenameLog -Level WARN -EventName PERM_CHECK -Message "Write permissions on '$($perm.Dn)' could not be determined (context: $permContext). Continuing; an error will be logged during the rename."
+    }
+    elseif ($perm.Missing.Count -gt 0) {
+        Write-RenameLog -Level ERROR -EventName PERM_DENIED -Message "No write permissions on: $($perm.Missing -join ', ') on object '$($perm.Dn)' (context: $permContext). Check the delegation (Prepare-HostRename.ps1 -Action Setup -Component Delegation) or use -DomainCredential."
+        Exit-HostRename -Code 4
+    }
+    else {
+        Write-RenameLog -Level INFO -EventName PERM_CHECK -Message "Permission to rename present on '$($perm.Dn)' (context: $permContext; writable: $($perm.Writable -join ', '))."
+    }
+
+    # 3) Build the target name from the template, shorten if necessary
+    $plan = Resolve-NameTemplate -Template $Template -CurrentName $active -Serial $serialValue -MaxLength $MaxLen -OnTooLong $OnTooLong
+    if (-not $plan.Ok) {
+        $script:TargetName = $plan.Full
+        Write-RenameLog -Level ERROR -EventName $plan.Code -Message $plan.Error
+        if ($plan.Code -eq 'TOO_LONG') { Exit-HostRename -Code 2 } else { Exit-HostRename -Code 1 }
+    }
+    $newName = $plan.Name
+    $script:TargetName = $newName
+    if ($plan.Truncated) {
+        Write-RenameLog -Level WARN -EventName TRUNCATE -Message "Template '$Template' produced '$($plan.Full)' ($($plan.Full.Length) characters), shortened to '$newName' (mode: $OnTooLong)."
+    }
+    if ($newName -ieq $active) {
+        Write-RenameLog -Level INFO -EventName ALREADY_DONE -Message "Host name '$active' already matches the result of the template - nothing to do." -LocalOnly
+        if ($Cleanup) { [void](Invoke-Cleanup) }
+        Exit-HostRename -Code 0
+    }
+
+    # 4) Collision check in AD (also applies to shortened names). On a duplicate serial number or colliding ID
+    #    a (further) future ID is used: stable from the MachineGuid, with the next counter value on a collision.
+    $idAttempt = if ($idUsed) { 0 } else { -1 }
+    while (Test-AdComputerExists $newName) {
+        if (-not $usesSerial -or $OnSerialProblem -ne 'GenerateId' -or -not $idSeed -or $idAttempt -ge 4) {
+            Write-RenameLog -Level ERROR -EventName COLLISION -Message "Computer object '$newName' already exists in AD. Aborting."
+            Exit-HostRename -Code 1
+        }
+        $idAttempt++
+        $oldName  = $newName
+        $futureId = New-FutureId -Seed $idSeed -Length $FutureIdLength -Attempt $idAttempt
+        $plan     = Resolve-NameTemplate -Template $Template -CurrentName $active -Serial $futureId -MaxLength $MaxLen -OnTooLong $OnTooLong
+        if (-not $plan.Ok) {
+            Write-RenameLog -Level ERROR -EventName $plan.Code -Message $plan.Error
+            Exit-HostRename -Code 1
+        }
+        $newName           = $plan.Name
+        $script:TargetName = $newName
+        $idUsed            = $true
+        Write-RenameLog -Level WARN -EventName SERIAL_FALLBACK -Message "Target name '$oldName' already exists in AD (duplicate serial number?) - using generated ID '$futureId' -> '$newName' (attempt $($idAttempt + 1))."
+        if ($newName -ieq $active) {
+            Write-RenameLog -Level INFO -EventName ALREADY_DONE -Message "Host name '$active' already matches the result of the template (generated ID) - nothing to do." -LocalOnly
+            if ($Cleanup) { [void](Invoke-Cleanup) }
+            Exit-HostRename -Code 0
+        }
+    }
+
+    # 5) DNS check (warning only, since stale records are common)
+    try {
+        $ips = [System.Net.Dns]::GetHostAddresses("$newName.$($cs.Domain)") | ForEach-Object { $_.IPAddressToString }
+        Write-RenameLog -Level WARN -EventName DNS_EXISTS -Message "Target name '$newName' already resolves in DNS: $($ips -join ', ') (possibly a stale record)."
+    }
+    catch { Write-Verbose "No DNS record for '$newName.$($cs.Domain)' (this is the expected case): $($_.Exception.Message)" }
+
+    # 6) Rename (local + AD object)
+    if ($PSCmdlet.ShouldProcess($active, "Rename to '$newName'")) {
+        $rp = @{ NewName = $newName; Force = $true; ErrorAction = 'Stop' }
+        if ($DomainCredential) { $rp.DomainCredential = $DomainCredential }
+        Rename-Computer @rp
+        Write-RenameLog -Level INFO -EventName RENAMED -Message "Successfully renamed: '$active' -> '$newName' (effective locally after reboot)."
+        try   { Set-RenameState -Original $active -Target $newName -Template $Template -FutureId $(if ($idUsed) { $futureId } else { '' }) }
+        catch { Write-RenameLog -Level WARN -EventName STATE -Message "State could not be saved: $($_.Exception.Message)" }
+
+        # 7) Verification in AD
+        try {
+            $newOk = Test-AdComputerExists $newName
+            $oldOk = Test-AdComputerExists $active
+            if ($newOk -and -not $oldOk) { Write-RenameLog -Level INFO -EventName AD_VERIFY -Message "AD object '$newName' exists, '$active' no longer does." }
+            else { Write-RenameLog -Level WARN -EventName AD_VERIFY -Message "AD check inconclusive (new exists: $newOk, old still exists: $oldOk). Wait for replication if necessary." }
+        }
+        catch { Write-RenameLog -Level WARN -EventName AD_VERIFY -Message "AD verification not possible: $($_.Exception.Message)" }
+
+        if ($Reboot -and $Deployment -ne 'Acmp') {
+            # Intentionally German: this notification is shown to the German-speaking end users (wording approved by the owner).
+            $msg = "Der Computername wird geändert. Das Gerät startet in $([math]::Round($RebootDelaySeconds / 60)) Minuten neu. Bitte Arbeit speichern."
+            & shutdown.exe /r /t $RebootDelaySeconds /c $msg /d p:4:1
+            Write-RenameLog -Level INFO -EventName REBOOT -Message "Reboot scheduled in $RebootDelaySeconds seconds."
+        }
+        if ($Cleanup) { [void](Invoke-Cleanup) }
+        Exit-HostRename -Code 3010
+    }
+    else {
+        Write-RenameLog -Level INFO -EventName WHATIF -Message "'$active' would be renamed to '$newName' (no changes made)."
+        Exit-HostRename -Code 0
+    }
+}
+catch {
+    $m = $_.Exception.Message
+    # 'verweigert' is intentionally German: the error text is localized (German Windows: "Zugriff verweigert")
+    if ($m -match 'denied|verweigert') {
+        $m += ' | Hint: check the AD permissions (delegation for SELF on the OU, including "Reset password", or -DomainCredential). Details: C:\Windows\debug\NetSetup.LOG'
+    }
+    Write-RenameLog -Level ERROR -EventName RENAME_FAILED -Message $m
+    Exit-HostRename -Code 1
+}
+finally {
+    Send-PendingLog   # deliver any entries that are still open
+}

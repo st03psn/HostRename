@@ -1,31 +1,13 @@
-# Logs and output
-*.log
-logs/
-output/
+# Umgebungsspezifische Test-Konfiguration: Prepare-HostRename.ps1 schreibt sie beim Setup (HostRename.Checks.beispiel.psd1 zeigt den Aufbau)
+HostRename.Checks.psd1
 
-# Test results / coverage
+# Pester-Ergebnisse
 TestResults/
 testResults.xml
-coverage.xml
 
-# Local CSV input files (may contain internal hostnames)
-*.local.csv
+# Release-Pakete
+*.zip
 
-# Credentials – never commit
-*.cred
-*.clixml
-*.pfx
-
-# Build artifacts
-out/
-build/
-*.nupkg
-
-# Editors / OS
-.vscode/*
-!.vscode/settings.json
-!.vscode/extensions.json
-.idea/
+# Betriebssystem
 Thumbs.db
-desktop.ini
 .DS_Store

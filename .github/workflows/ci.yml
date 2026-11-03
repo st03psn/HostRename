@@ -5,30 +5,103 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  lint-and-test:
+  checks:
+    name: Checks (${{ matrix.shell }})
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]   # powershell = Windows PowerShell 5.1, pwsh = PowerShell 7
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install modules
-        shell: pwsh
+      - name: Install Pester and PSScriptAnalyzer
         run: |
-          Set-PSRepository PSGallery -InstallationPolicy Trusted
-          Install-Module PSScriptAnalyzer, Pester -Scope CurrentUser -Force
+          $ErrorActionPreference = 'Stop'
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name Pester -MinimumVersion 5.3 -SkipPublisherCheck -Force -Scope CurrentUser
+          Install-Module -Name PSScriptAnalyzer -SkipPublisherCheck -Force -Scope CurrentUser
 
-      - name: PSScriptAnalyzer
-        shell: pwsh
+      - name: Parse check (*.ps1)
         run: |
-          $results = Invoke-ScriptAnalyzer -Path ./src -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
-          $results | Format-Table -AutoSize
-          if ($results) { throw "PSScriptAnalyzer found $($results.Count) issue(s)." }
-
-      - name: Pester
-        shell: pwsh
-        run: |
-          if (Get-ChildItem ./tests -Filter *.Tests.ps1 -Recurse) {
-            Invoke-Pester -Path ./tests -CI
-          } else {
-            Write-Host 'No tests found yet - skipping.'
+          $ErrorActionPreference = 'Stop'
+          $failed = @()
+          foreach ($file in Get-ChildItem -Path . -Recurse -File -Include *.ps1) {
+              $errors = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$errors)
+              foreach ($err in $errors) {
+                  $failed += "$($file.FullName): line $($err.Extent.StartLineNumber): $($err.Message)"
+              }
           }
+          if ($failed.Count -gt 0) {
+              $failed | ForEach-Object { Write-Host $_ }
+              throw "Parse errors in $($failed.Count) place(s)."
+          }
+          Write-Host 'All *.ps1 files parse without errors.'
+
+      - name: Encoding and line-ending check (*.ps1, *.psd1)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $problems = @()
+          foreach ($file in Get-ChildItem -Path . -Recurse -File -Include *.ps1, *.psd1) {
+              $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+              $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+              if (-not $hasBom) {
+                  $problems += "$($file.FullName): missing UTF-8 BOM"
+              }
+              if ([Array]::IndexOf($bytes, [byte]13) -ge 0) {
+                  $problems += "$($file.FullName): contains CR characters (CRLF); expected LF"
+              }
+          }
+          if ($problems.Count -gt 0) {
+              $problems | ForEach-Object { Write-Host $_ }
+              throw "Encoding/line-ending problems in $($problems.Count) file(s)."
+          }
+          Write-Host 'All *.ps1 and *.psd1 files have a UTF-8 BOM and LF line endings.'
+
+      - name: PSScriptAnalyzer (errors only)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module PSScriptAnalyzer
+          $results = @(Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error)
+          if ($results.Count -gt 0) {
+              $results | Format-Table -AutoSize RuleName, Severity, ScriptName, Line, Message | Out-String -Width 300 | Write-Host
+              throw "PSScriptAnalyzer reported $($results.Count) error(s)."
+          }
+          Write-Host 'PSScriptAnalyzer: no errors.'
+
+      - name: Pester (tests that do not need Active Directory)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Windows PowerShell 5.1 loads the built-in Pester 3 by default; force the 5.x module.
+          Import-Module Pester -MinimumVersion 5.3 -Force
+          $config = New-PesterConfiguration
+          # Dc and Client tests need a real AD/GPO environment and HostRename.Checks.psd1: not run here.
+          $config.Run.Path = @(
+              'HostRename.Local.Tests.ps1',
+              'HostRename.Network.Tests.ps1',
+              'HostRename.Certificate.Tests.ps1',
+              'HostRename.Acmp.Tests.ps1'
+          )
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputFormat = 'NUnitXml'
+          $config.TestResult.OutputPath = 'testResults.xml'
+          Invoke-Pester -Configuration $config
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.shell }}
+          path: testResults.xml
+          if-no-files-found: warn

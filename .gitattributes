@@ -1,6 +1,7 @@
-* text=auto
-*.ps1  text eol=crlf
-*.psm1 text eol=crlf
-*.psd1 text eol=crlf
+# Zeilenenden: LF in allen Textdateien, auch unter Windows. So entspricht der Auschecken-Stand genau dem getesteten Stand.
+# Die PowerShell-Dateien sind UTF-8 mit BOM (Windows PowerShell 5.1 liest sie sonst als ANSI). Der BOM ist Teil des Inhalts und darf nicht entfernt werden.
+*.ps1  text eol=lf
+*.psd1 text eol=lf
 *.md   text eol=lf
-*.yml  text eol=lf
+.gitattributes text eol=lf
+.gitignore     text eol=lf

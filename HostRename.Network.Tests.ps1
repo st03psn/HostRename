@@ -449,6 +449,9 @@ Describe 'Script run in a child process' {
     BeforeAll {
         $exe = (Get-Process -Id $PID).Path
         function Invoke-Gate { param([string[]]$Arguments)
+            # Windows PowerShell 5.1 turns stderr output of a native command into an error record, which
+            # throws under ErrorActionPreference Stop. The test only checks stdout and the exit code.
+            $ErrorActionPreference = 'Continue'
             $out = & $exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $GatePath @Arguments 2>$null
             [pscustomobject]@{ Out = @($out); Exit = $LASTEXITCODE }
         }

@@ -6,8 +6,10 @@ name: Release
 # a tag on an older commit (403), so a person publishes the draft (Releases > Edit > Publish),
 # which creates the tag v<version> on the source commit with that person's rights.
 # For an older commit even creating the draft fails with 403 (seen for v1.1.9): then push the tag
-# yourself first (git tag v<version> <sha>; git push origin v<version>) and run the workflow
-# again; an existing tag that points to the source commit is accepted.
+# yourself first (git tag v<version> <sha>; git push origin v<version>), or in the web UI create a
+# branch on that commit and publish a release v<version> with that branch as target; then run the
+# workflow again: an existing tag that points to the source commit is accepted, and an existing
+# published release is completed (ZIPs, title, notes, latest/pre-release).
 # Per version, these files must exist in .github/release-notes/ on the branch the workflow runs on:
 #   v<version>.md               release notes
 #   v<version>.<package>.files  one file list per package (e.g. v1.2.0.gpo.files, v1.2.0.acmp.files);
@@ -147,12 +149,24 @@ jobs:
           if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
           if [ "$DRAFT" = "true" ]; then flags+=(--draft)
           elif [ "$PRERELEASE" != "true" ]; then flags+=(--latest); fi
+          mapfile -t zips < dist/zips.txt
+          [ ${#zips[@]} -gt 0 ] || { echo "No ZIP was built"; exit 1; }
+          existing="$(gh release view "v$VERSION" --json isDraft --jq .isDraft 2>/dev/null || true)"
           # A draft of this version created by an earlier run is replaced (drafts have no tag yet).
-          if [ "$(gh release view "v$VERSION" --json isDraft --jq .isDraft 2>/dev/null || true)" = "true" ]; then
+          if [ "$existing" = "true" ]; then
             echo "Replacing the existing draft of v$VERSION"
             gh release delete "v$VERSION" --yes
+          # A release the owner already published by hand (e.g. to create the tag on an older commit
+          # in the web UI) is completed: ZIPs uploaded, title and notes set, pre-release/latest flag.
+          elif [ "$existing" = "false" ]; then
+            [ "$TAG_EXISTS" = "true" ] || { echo "Release v$VERSION exists but its tag does not point to the source"; exit 1; }
+            echo "Completing the existing release v$VERSION"
+            gh release upload "v$VERSION" "${zips[@]}" --clobber
+            edit=(--title "HostRename $VERSION" --notes-file "meta/.github/release-notes/v$VERSION.md")
+            if [ "$PRERELEASE" = "true" ]; then edit+=(--prerelease); else edit+=(--prerelease=false --latest); fi
+            gh release edit "v$VERSION" "${edit[@]}"
+            exit 0
           fi
-          mapfile -t zips < dist/zips.txt
           [ ${#zips[@]} -gt 0 ] || { echo "No ZIP was built"; exit 1; }
           # With an existing tag, --target is not passed (the tag defines the commit).
           if [ "$TAG_EXISTS" != "true" ]; then flags+=(--target "$SOURCE_SHA"); fi

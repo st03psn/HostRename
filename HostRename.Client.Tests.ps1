@@ -471,8 +471,10 @@ Describe 'Result after rename and reboot (phase PostRun)' {
     It 'the state (HostRenameState) contains target name and template' {
         if ($phaseResolved -ne 'PostRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         $stateKey = 'HKLM:\SOFTWARE\HostRenameState'
-        if (-not (Test-Path $stateKey)) { Set-ItResult -Skipped -Because 'No state present (the device already had a matching name or was not renamed by HostRename)'; return }
-        $st = Get-ItemProperty -Path $stateKey
+        # Since 1.2.0 the key also holds reporting values (LastRun, LastExitCode, ...) after every run,
+        # so its mere existence does not mean that HostRename renamed the device: check TargetName.
+        $st = if (Test-Path $stateKey) { Get-ItemProperty -Path $stateKey } else { $null }
+        if (-not $st -or -not $st.TargetName) { Set-ItResult -Skipped -Because 'No rename state present (the device already had a matching name or was not renamed by HostRename)'; return }
         $st.TargetName | Should -BeExactly $names.Pending
         $st.Template   | Should -Not -BeNullOrEmpty
     }

@@ -40,7 +40,7 @@ Get-ChildItem -Recurse -File -Include *.ps1 | ForEach-Object {
 
 # 2. Pester tests that do not need Active Directory
 Import-Module Pester -MinimumVersion 5.3 -Force
-Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1 -Output Detailed
+Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1, .\HostRename.Simulation.Tests.ps1 -Output Detailed
 
 # 3. Static analysis (errors must be zero; warnings are accepted)
 Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
@@ -109,7 +109,7 @@ Get-ChildItem -Recurse -File -Include *.ps1 | ForEach-Object {
 
 # 2. Pester-Tests, die kein Active Directory brauchen
 Import-Module Pester -MinimumVersion 5.3 -Force
-Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1 -Output Detailed
+Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1, .\HostRename.Simulation.Tests.ps1 -Output Detailed
 
 # 3. Statische Analyse (Fehler müssen null sein; Warnungen werden akzeptiert)
 Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error

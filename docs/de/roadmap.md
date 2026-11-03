@@ -69,7 +69,8 @@ Ergebnisse aus T3, die Änderungen erfordern (z. B. andere Exit-Codes oder eine 
 
 Teststand der automatischen Phasen:
 
-- **T1 (Linux, PowerShell 7, Pester 5 und 6):** Local 48 bestanden, 20 fehlgeschlagen, 5 übersprungen. Die Fehler sind reine Windows-Tests, die T2 abdeckt. Network 89 bestanden, 1 übersprungen. Certificate 69 bestanden. Acmp 83 bestanden.
-- **T2 (GitHub Actions, Windows PowerShell 5.1 und 7):** grün, einschließlich der reinen Windows-Tests aus Local.
+- **T1 (Linux, PowerShell 7, Pester 5 und 6):** Local 49 bestanden, 20 fehlgeschlagen, 5 übersprungen. Die Fehler sind reine Windows-Tests, die T2 abdeckt. Network 89 bestanden, 1 übersprungen. Certificate 69 bestanden. Acmp 83 bestanden. Simulation 39 bestanden.
+- **T2 (GitHub Actions, Windows PowerShell 5.1 und 7):** grün, einschließlich der reinen Windows-Tests aus Local. Die Simulation steht in der CI-Liste; ihr erster CI-Lauf steht noch aus.
+- **Simulation (`HostRename.Simulation.Tests.ps1`, Teil von T1 und T2):** führt die echten Skripte und die dokumentierten Snippets für Zustandsprüfung und Status so verkettet aus wie den ACMP-Client-Command, über alle Phasen (LAN, DirectAccess, WLAN mit Zertifikatserneuerung, Warten am Gate, fehlende Delegierung, Namenskollision, unbrauchbare Seriennummer, Name passt schon, 32-Bit-Prozess, vorbereiteter Log-Ordner, GPO-Regression). Die Umgebung ist simuliert (Registry im Speicher; CIM, AD, Netzwerk, Zertifikatsspeicher und CA gemockt); das zentrale Log wird nicht simuliert. Sie zeigt, dass die Skripte und der dokumentierte Ablauf zusammenpassen; die Gerätetests in T3 ersetzt sie nicht.
 
 **Als Nächstes: T3, Gerätetests durch den Inhaber** nach [test-plan.md](test-plan.md). Nichts aus 1.2.0 ist bisher auf einem echten Domänen-Client, über DirectAccess, mit WLAN/AD CS oder in ACMP gelaufen.

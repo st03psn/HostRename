@@ -135,12 +135,12 @@ The device is **done** when the marker key `HKLM\SOFTWARE\HostRename` exists. Th
 Example (PowerShell, for a condition or script step; verify in ACMP how the result is evaluated):
 
 ```powershell
-if (Test-Path 'HKLM:\SOFTWARE\HostRename') { exit 0 }   # done: the Client Command ends here
+if (Test-Path 'HKLM:\SOFTWARE\HostRename') { 'phase=done'; exit 0 }   # done: the Client Command ends here
 $t = (Get-ItemProperty 'HKLM:\SOFTWARE\HostRenameState' -ErrorAction SilentlyContinue).TargetName
 if ($t -and $env:COMPUTERNAME -ieq $t) { 'phase=after-reboot' } else { 'phase=rename' }
 ```
 
-Using the name comparison is optional: `Invoke-HostRename.ps1` is idempotent. If the name already matches, it returns 0 (nothing to do) or, while a reboot is pending, 3010 again.
+The snippet always ends with exit code 0; the phase is in its output (`phase=done`, `phase=after-reboot` or `phase=rename`). Using the name comparison is optional: `Invoke-HostRename.ps1` is idempotent. If the name already matches, it returns 0 (nothing to do) or, while a reboot is pending, 3010 again.
 
 ### Step 2 and 6: gate
 

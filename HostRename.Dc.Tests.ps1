@@ -31,8 +31,8 @@
 
 .NOTES
     Product          HostRename
-    Version          1.1.9
-    Date             2026-10-30
+    Version          1.2.0
+    Date             2026-11-03
     Run on           DC or admin PC with RSAT, Windows PowerShell 5.1, domain admin (read-only)
     Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)
 

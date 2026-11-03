@@ -2,6 +2,14 @@ name: Bug report / Fehlerbericht
 description: Report a problem with HostRename / Ein Problem mit HostRename melden
 labels: [bug]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not include environment data.** Remove or replace domain names, OUs, server and computer names, IP addresses, user names and anything else that describes your network. Use placeholders such as `<domain>`, `<OU>`, `<server>`.
+        HostRename supports AD domain-joined clients only (workgroup is not supported).
+
+        **Keine Umgebungsdaten angeben.** Domänennamen, OUs, Server- und Computernamen, IP-Adressen, Benutzernamen und alles, was dein Netzwerk beschreibt, entfernen oder durch Platzhalter wie `<domain>`, `<OU>`, `<server>` ersetzen.
+        HostRename unterstützt nur AD-domänenbeigetretene Clients (Arbeitsgruppe wird nicht unterstützt).
   - type: textarea
     id: description
     attributes:
@@ -14,12 +22,41 @@ body:
     attributes:
       label: Steps to reproduce / Schritte zur Reproduktion
       placeholder: |
-        1. .\src\HostRename.ps1 -NewName ...
+        1. .\Invoke-HostRename.ps1 ... (parameters with placeholders, no real names)
         2. ...
     validations:
       required: true
+  - type: dropdown
+    id: script
+    attributes:
+      label: Script / Skript
+      options:
+        - Invoke-HostRename.ps1
+        - Prepare-HostRename.ps1
+        - Test-DeploymentNetwork.ps1
+        - Update-ComputerCertificate.ps1
+        - Other / Sonstiges
+    validations:
+      required: true
   - type: input
-    id: os
+    id: version
+    attributes:
+      label: Script version / Skriptversion
+      description: Version from the `.NOTES` section of the script, e.g. 1.1.9 / Version aus dem Abschnitt `.NOTES`, z. B. 1.1.9
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment method / Verteilungsmethode
+      options:
+        - GPO
+        - ACMP
+        - Manual / manuell
+    validations:
+      required: true
+  - type: input
+    id: windows
     attributes:
       label: Windows version / Windows-Version
       placeholder: e.g. Windows 11 23H2, Windows Server 2022
@@ -28,20 +65,20 @@ body:
   - type: input
     id: psversion
     attributes:
-      label: PowerShell version ($PSVersionTable.PSVersion)
+      label: PowerShell version / PowerShell-Version
+      description: Output of `$PSVersionTable.PSVersion`, and whether you ran it in Windows PowerShell 5.1 or PowerShell 7 / Ausgabe von `$PSVersionTable.PSVersion` und ob mit 5.1 oder 7
+      placeholder: e.g. 5.1.22621.963 (Windows PowerShell)
     validations:
       required: true
-  - type: dropdown
-    id: environment
+  - type: input
+    id: exitcode
     attributes:
-      label: Environment / Umgebung
-      options:
-        - Workgroup / Arbeitsgruppe
-        - Active Directory domain / AD-Domäne
-        - Entra ID (Azure AD) joined
+      label: Exit code / event code / Exit-Code / Ereignis-ID
+      description: If available, e.g. the exit code of the script or the event ID in the Windows event log / Falls vorhanden, z. B. Exit-Code des Skripts oder Ereignis-ID im Windows-Ereignisprotokoll
   - type: textarea
     id: logs
     attributes:
-      label: Error output / Fehlerausgabe
-      description: Please remove internal hostnames and credentials. / Bitte interne Hostnamen und Zugangsdaten entfernen.
+      label: Log excerpt / Log-Auszug
+      description: |
+        Only the relevant lines. Remove hostnames, OUs, domain names, server names, IP addresses and user names before pasting. / Nur die relevanten Zeilen. Vor dem Einfügen Hostnamen, OUs, Domänennamen, Servernamen, IP-Adressen und Benutzernamen entfernen.
       render: text

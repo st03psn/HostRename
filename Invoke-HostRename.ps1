@@ -170,8 +170,8 @@
 
 .NOTES
     Product          HostRename
-    Version          1.1.9
-    Date             2026-10-30
+    Version          1.2.0
+    Date             2026-11-03
     Execution        Scheduled task as SYSTEM (deployed via GPO), run by the ACMP agent as SYSTEM, or manually as administrator
     Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)
 
@@ -219,7 +219,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ScriptVersion = '1.1.9'   # must match the version in .NOTES (checked by HostRename.Local.Tests.ps1)
+$ScriptVersion = '1.2.0'   # must match the version in .NOTES (checked by HostRename.Local.Tests.ps1)
 $MaxLen     = 15
 $SelfPath    = $PSCommandPath   # path of this script (a variable so that tests can substitute it)
 

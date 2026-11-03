@@ -1,5 +1,5 @@
 ﻿@{
-    # HostRename - Example test configuration (Version 1.1.9)
+    # HostRename - Example test configuration (Version 1.2.0)
     #
     # The real file HostRename.Checks.psd1 is written by Prepare-HostRename.ps1 (-Action Setup) from its variables.
     # This example file is not used; it only shows the structure (to copy manually if the tests are to

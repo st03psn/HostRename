@@ -70,8 +70,8 @@
 
 .NOTES
     Product          HostRename
-    Version          1.1.9
-    Date             2026-10-30
+    Version          1.2.0
+    Date             2026-11-03
     Run on           Elevated Windows PowerShell 5.1 on a DC or admin PC (GroupPolicy and ActiveDirectory modules),
                      account with the right to create and delete GPOs (domain admin)
     Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)

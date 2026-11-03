@@ -63,8 +63,8 @@
 
 .NOTES
     Product          HostRename
-    Version          1.1.9
-    Date             2026-10-30
+    Version          1.2.0
+    Date             2026-11-03
     Execution        Local administrator on the pilot device (Windows PowerShell 5.1)
     Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)
 

@@ -327,7 +327,7 @@ BeforeAll {
     function Invoke-SimulatedClientCommand {
         <#
           The Client Command "HostRename - Rename" as described in docs/acmp-guide.md, section 4:
-            1 state check (documented snippet) -> done: end
+            1 state check (documented snippet) -> done: end; permanent (LastExitCode 2/4/5): end
             2 gate: 20 dialog "LAN cable", end; 21/22 end silently; 1 end (retry)
             3 rename (phase=rename only), 4 evaluate: 3010 reboot dialog, end; 1 retry; 2/4/5 permanent; 0 continue
             6 gate (already passed in this run), 7 certificate (WLAN devices only), 8 cleanup
@@ -348,8 +348,9 @@ BeforeAll {
             if ($global:HRSim.RegWrites -ne $writes) { throw 'The state check wrote to the registry.' }
             $run.Steps['StateCheck'] = $sc
             $run.Phase = [regex]::Match($sc.Text, '(?m)^phase=(\S+)').Groups[1].Value
-            if ($run.Phase -notin 'done', 'after-reboot', 'rename') { throw "State check: unexpected output '$($sc.Text)' (exit $($sc.ExitCode))" }
+            if ($run.Phase -notin 'done', 'permanent', 'after-reboot', 'rename') { throw "State check: unexpected output '$($sc.Text)' (exit $($sc.ExitCode))" }
             if ($run.Phase -eq 'done') { return 'Done' }
+            if ($run.Phase -eq 'permanent') { return 'Permanent' }
 
             $gate = Invoke-SimScript -Path $global:HRSim.Paths.Gate -Parameters @{ CorporateSsid = $CorporateSsid }
             $run.Steps['Gate'] = $gate
@@ -590,6 +591,22 @@ Describe 'Simulation harness and documented snippets' {
         $r.Text | Should -Match '^phase=done$'
         $r.ExitCode | Should -Be 0
     }
+    It 'the state check reports phase=permanent for LastExitCode 2, 4 and 5 (marker absent), not for 0, 1 or 3010, and phase=done wins' {
+        $global:HRSim.Registry.Remove('HKLM:\SOFTWARE\HostRename')
+        foreach ($code in 2, 4, 5) {
+            $global:HRSim.Registry['HKLM:\SOFTWARE\HostRenameState'] = @{ LastExitCode = $code }
+            $r = Invoke-SimScript -Path $global:HRSim.Paths.StateCheck
+            $r.Text | Should -Match '^phase=permanent$'
+            $r.ExitCode | Should -Be 0
+        }
+        foreach ($code in 0, 1, 3010) {
+            $global:HRSim.Registry['HKLM:\SOFTWARE\HostRenameState'] = @{ LastExitCode = $code }
+            (Invoke-SimScript -Path $global:HRSim.Paths.StateCheck).Text | Should -Match '^phase=rename$'
+        }
+        $global:HRSim.Registry['HKLM:\SOFTWARE\HostRenameState'] = @{ LastExitCode = 4 }
+        $global:HRSim.Registry['HKLM:\SOFTWARE\HostRename'] = @{}
+        (Invoke-SimScript -Path $global:HRSim.Paths.StateCheck).Text | Should -Match '^phase=done$'
+    }
 }
 
 Describe 'S1 LAN device, template DE{Serial}, without central log: full flow' {
@@ -669,6 +686,8 @@ Describe 'S1 LAN device, template DE{Serial}, without central log: full flow' {
         $run.Steps['Gate'].ExitCode | Should -Be 0
         $run.Steps['Cleanup'].ExitCode | Should -Be 0
         $run.Steps['Cleanup'].Text | Should -Match 'ALREADY_DONE'
+        $run.Steps['Cleanup'].Text | Should -Match '(?m)CLEANUP_DONE' -Because 'the cleanup events reach stdout (ACMP job output)'
+        $run.Steps['Cleanup'].Text | Should -Not -Match '(?m)^\s*(True|False)\s*$' -Because 'the return value of Invoke-Cleanup must not leak'
         $run.Outcome | Should -Be 'Done'
         $m = Get-SimMarker
         $m.ComputerName | Should -Be 'DESIM4711AB'
@@ -853,13 +872,38 @@ Describe 'S6 no delegation on the OU' {
         Get-SimPendingName | Should -Be 'PC349219'
         $run.Status.Phase | Should -Be 'Permanent'
     }
-    It 'reruns stay at 4 and never rename' {
+    It 'reruns end at step 1 with phase=permanent: no gate, no script, nothing renamed' {
+        $before = (Get-SimState).LastRun
         1..2 | ForEach-Object {
             $run = Invoke-SimulatedClientCommand -RenameParameters $script:P
-            $run.Steps['Rename'].ExitCode | Should -Be 4
+            $run.Phase | Should -Be 'permanent'
+            $run.Outcome | Should -Be 'Permanent'
+            @($run.Steps.Keys) | Should -Be @('StateCheck')
             $run.Status.Phase | Should -Be 'Permanent'
         }
+        (Get-SimState).LastRun | Should -Be $before -Because 'no script ran'
         $global:HRSim.RenameCalls.Count | Should -Be 0
+    }
+    It 'release without fixing the cause: the next run proceeds and ends at exit 4 again' {
+        $global:HRSim.Registry['HKLM:\SOFTWARE\HostRenameState'].Remove('LastExitCode')   # = the documented release
+        $run = Invoke-SimulatedClientCommand -RenameParameters $script:P
+        $run.Phase | Should -Be 'rename'
+        $run.Steps['Rename'].ExitCode | Should -Be 4
+        $run.Outcome | Should -Be 'Permanent'
+        (Get-SimState).LastExitCode | Should -Be 4
+        $global:HRSim.RenameCalls.Count | Should -Be 0
+    }
+    It 'release after the delegation is granted: the next run renames' {
+        $run = Invoke-SimulatedClientCommand -RenameParameters $script:P
+        $run.Phase | Should -Be 'permanent'
+        $global:HRSim.Registry['HKLM:\SOFTWARE\HostRenameState'].Remove('LastExitCode')   # = the documented release
+        $global:HRSim.Device.Delegation = $true
+        $run = Invoke-SimulatedClientCommand -RenameParameters $script:P
+        $run.Phase | Should -Be 'rename'
+        $run.Steps['Rename'].ExitCode | Should -Be 3010
+        $run.Outcome | Should -Be 'RebootRequired'
+        $global:HRSim.RenameCalls.Count | Should -Be 1
+        (Get-SimState).LastExitCode | Should -Be 3010
     }
 }
 

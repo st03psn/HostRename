@@ -109,6 +109,7 @@ The last stdout line is a summary: `RESULT=RENEWED|NOT_NEEDED|WHATIF|ERROR EXIT=
 
 ```text
 1  state check        done?            -> end
+                      permanent error? -> end (until released)
 2  gate               20 -> dialog "connect LAN cable", end (retry later)
                       21, 22 -> end silently (retry later)
 3  rename             Invoke-HostRename.ps1 -Deployment Acmp ...
@@ -136,11 +137,20 @@ Example (PowerShell, for a condition or script step; verify in ACMP how the resu
 
 ```powershell
 if (Test-Path 'HKLM:\SOFTWARE\HostRename') { 'phase=done'; exit 0 }   # done: the Client Command ends here
-$t = (Get-ItemProperty 'HKLM:\SOFTWARE\HostRenameState' -ErrorAction SilentlyContinue).TargetName
-if ($t -and $env:COMPUTERNAME -ieq $t) { 'phase=after-reboot' } else { 'phase=rename' }
+$s = Get-ItemProperty 'HKLM:\SOFTWARE\HostRenameState' -ErrorAction SilentlyContinue
+if ($s.LastExitCode -in 2, 4, 5) { 'phase=permanent'; exit 0 }   # permanent error: end until released
+if ($s.TargetName -and $env:COMPUTERNAME -ieq $s.TargetName) { 'phase=after-reboot' } else { 'phase=rename' }
 ```
 
-The snippet always ends with exit code 0; the phase is in its output (`phase=done`, `phase=after-reboot` or `phase=rename`). Using the name comparison is optional: `Invoke-HostRename.ps1` is idempotent. If the name already matches, it returns 0 (nothing to do) or, while a reboot is pending, 3010 again.
+The snippet always ends with exit code 0; the phase is in its output (`phase=done`, `phase=permanent`, `phase=after-reboot` or `phase=rename`). Using the name comparison is optional: `Invoke-HostRename.ps1` is idempotent. If the name already matches, it returns 0 (nothing to do) or, while a reboot is pending, 3010 again.
+
+**Permanent errors.** After exit code 2, 4 or 5 the script has stored it in `LastExitCode`. Because the marker is absent, step 1 then ends with `phase=permanent` on every following run: the Client Command stops there and neither the gate nor the script runs again, so a device with a permanent error is not retried endlessly. To release a device after the cause is fixed (for example the delegation), delete the value, as administrator on the device or through a small ACMP Client Command:
+
+```powershell
+Remove-ItemProperty -Path HKLM:\SOFTWARE\HostRenameState -Name LastExitCode
+```
+
+The next run then proceeds with step 2. A later successful run overwrites `LastExitCode` anyway; if the cause is not fixed, the run ends with the same exit code again and the device is blocked again.
 
 ### Step 2 and 6: gate
 
@@ -164,7 +174,7 @@ Only on devices that use the EAP-TLS WLAN. Whether this step is needed at all is
 
 ### Step 8: cleanup
 
-`Invoke-HostRename.ps1 -Deployment Acmp -Cleanup` delivers the logs (only with a central log), sets the marker `HKLM\SOFTWARE\HostRename` and removes a scheduled task if one exists (there is none under ACMP). The script file and its folder stay. With a central log, the local logs are removed after delivery; without one, they stay in `C:\ProgramData\HostRename`. After this run, step 1 reports "done" from then on.
+`Invoke-HostRename.ps1 -Deployment Acmp -Cleanup` delivers the logs (only with a central log), sets the marker `HKLM\SOFTWARE\HostRename` and removes a scheduled task if one exists (there is none under ACMP). The script file and its folder stay. With a central log, the local logs are removed after delivery; without one, they stay in `C:\ProgramData\HostRename`. After this run, step 1 reports "done" from then on. The cleanup events (`CLEANUP`, `CLEANUP_DONE`, `CLEANUP_DEFERRED`, `CLEANUP_FAILED`) appear on stdout, so they are part of the ACMP job output as well as the local log and `LastEvent`.
 
 ## 5. Exit-code contract
 

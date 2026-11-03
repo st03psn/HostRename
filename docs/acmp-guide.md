@@ -22,6 +22,7 @@ GPO and ACMP are **alternative** deployment methods. Never run both on the same 
 - **Share** (`-Component Share`) only if the central CSV log is to be used. Without a central log, no share is needed.
 - **No GPO** for these devices (do not create the main GPO, or do not link it to the OUs of ACMP devices).
 - Devices run Windows PowerShell 5.1 (always present); call the scripts with `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ...`.
+- **64-bit PowerShell is required.** If the ACMP agent is a 32-bit process, `powershell.exe` resolves to the 32-bit `SysWOW64` copy and registry writes to `HKLM\SOFTWARE` land in `WOW6432Node` (the device would never count as "done"). `Invoke-HostRename.ps1 -Deployment Acmp` therefore refuses to run in a 32-bit process on 64-bit Windows: it prints `[ERROR] PLATFORM: ...` on stdout and ends with exit code 1 before writing anything (no log, no reporting values). In that case call `%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe` instead of `powershell.exe` (`Sysnative` is only visible to 32-bit processes). Whether the ACMP agent runs as 32 or 64 bit: verify in ACMP (device test A1).
 - For the certificate step: the **template name** (not the display name) of the WLAN machine certificate. It is not known yet and must be determined first.
 
 ## 2. File repository
@@ -64,23 +65,28 @@ Parameters relevant for ACMP:
 | `-Deployment Acmp` | ACMP mode: local logs in `C:\ProgramData\HostRename`, `-Reboot` is ignored (event `REBOOT_IGNORED`), `-Cleanup` keeps the script file and folder |
 | `-NameTemplate` / `-Prefix` / `-Suffix` | renaming rule, as in the README, e.g. `-NameTemplate "DE{Serial}"` |
 | `-OnTooLong`, `-OnSerialProblem`, `-FutureIdLength` | as in the README (name too long, unusable serial number) |
-| `-CentralLogPath` | path of the central CSV log; `''` (empty) disables it. Without a central log the local log files are kept as the only evidence |
-| `-LocalDir` | local log folder (ACMP mode default: `C:\ProgramData\HostRename`) |
+| `-NoCentralLog` | no central log: only the local log is written, nothing waits for delivery, the local log files are kept as the only evidence |
+| `-CentralLogPath` | UNC path of the central CSV log (only if a central log is used). A value that is not an absolute path disables the central log with the warning `LOG_CHECK` in the local log |
+| `-LocalDir` | local log folder; leave it out in ACMP mode (default `C:\ProgramData\HostRename`, protected, see below). An explicit folder is used as given: it must not be writable for standard users |
 | `-Cleanup` | final run: set the marker, deliver logs, remove the local logs (if a central log is used) |
 | `-WhatIf` | only shows the target name, changes nothing, writes no reporting values |
 
 ```powershell
 # dry run
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -CentralLogPath '' -WhatIf
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -NoCentralLog -WhatIf
 # rename without central log
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -CentralLogPath ''
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -NoCentralLog
 # rename with central log
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -CentralLogPath "\\<Server>\HostRename$\log\rename-log.csv"
 # final run after the reboot
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -CentralLogPath '' -Cleanup
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -NoCentralLog -Cleanup
+# 32-bit ACMP agent on 64-bit Windows: same calls with the 64-bit PowerShell
+%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -NoCentralLog
 ```
 
-Use the **same** template in all calls (a different template triggers a new rename). Do not pass `-Reboot`: ACMP controls the reboot. Without `-CentralLogPath`, the default is a placeholder path (`\\FILESERVER\...`), so always pass either a real path or `''`.
+Use the **same** template in all calls (a different template triggers a new rename). Do not pass `-Reboot`: ACMP controls the reboot (if it is passed anyway, the warning `REBOOT_IGNORED` appears in the local log on every run). Without `-CentralLogPath`, the default is a placeholder path (`\\FILESERVER\...`), so always pass either `-NoCentralLog` or a real UNC path. Do not use `-CentralLogPath ''`: with `powershell.exe -File` the two quote characters arrive literally (or, in some consoles, the empty argument is dropped). The script treats `''`, `""` and blank values as "no central log", but `-NoCentralLog` is the documented way.
+
+**Protected log folder.** Standard users may create folders in `C:\ProgramData`. Before writing anything, the script therefore checks the default folder `C:\ProgramData\HostRename`: if it exists, it must not be a junction or symbolic link and must be owned by SYSTEM or Administrators; files in it must not be reparse points and must be owned by SYSTEM or Administrators. Otherwise the script prints `[ERROR] LOCAL_DIR: ...` on stdout, does not use the folder and ends with exit code 1 (the reporting values are still written). An administrator then removes the folder; the next run recreates it. On every run the script sets owner Administrators, removes inheritance and grants full control only to SYSTEM and Administrators (folder and files, by SID with `icacls`). Standard users can therefore no longer read the local logs.
 
 ### `Update-ComputerCertificate.ps1` (certificate renewal)
 
@@ -173,9 +179,11 @@ Only on devices that use the EAP-TLS WLAN. Whether this step is needed at all is
 | 20 | `Test-DeploymentNetwork.ps1` | only corporate WLAN | dialog "connect LAN cable", retry later |
 | 21 | `Test-DeploymentNetwork.ps1` | no domain connection | silent, retry later |
 | 22 | `Test-DeploymentNetwork.ps1` | path not allowed / unknown | silent, retry later |
-| 100 and above, 1001 and above | ACMP itself | ACMP's own codes | do not collide with the script codes (all below 100); how ACMP maps them: verify in ACMP |
+| 100 and above, 1001 and above | ACMP itself | ACMP's own codes | how ACMP maps them: verify in ACMP |
 
-Whether and how ACMP passes through the exit code of a PowerShell script (especially 3010) is one of the device tests (test plan, ACMP section).
+The script codes are 0 to 5, 20 to 22 and 3010. All except 3010 are below ACMP's own ranges; **3010 lies numerically in ACMP's range (1001 and above)**. Verify in ACMP how 3010 from a script is treated: passed through unchanged, usable in a condition, or interpreted as an ACMP code (device test A1).
+
+Under `LOCAL_DIR` and `PLATFORM` (see above) exit code 1 has no entry in the local log; the reason is only on stdout (ACMP output).
 
 ### Suggested dialog texts (examples, adjust to your company)
 
@@ -189,16 +197,27 @@ Whether dialogs can appear in the user session while the Client Command runs as 
 
 ## 6. Reporting via ACMP custom fields
 
-`Invoke-HostRename.ps1` writes after every run (not with `-WhatIf`) these values to `HKLM\SOFTWARE\HostRenameState`. They are for reporting only; the script logic never reads them.
+`Invoke-HostRename.ps1` writes after every run (not with `-WhatIf`, not in a 32-bit process) these values to `HKLM\SOFTWARE\HostRenameState`. They are for reporting only; the script logic never reads them.
 
 | Registry value | Content |
 | --- | --- |
 | `LastRun` | time of the last run (`yyyy-MM-ddTHH:mm:sszzz`) |
-| `LastExitCode` | exit code of the last run (DWORD) |
-| `LastEvent` | last event code logged (e.g. `RENAMED`, `CLEANUP_DONE`, `PERM_DENIED`) |
+| `LastExitCode` | exit code of the last run (DWORD): **the primary status** |
+| `LastEvent` | the event code that was logged last in this run; a detail, not a status (see below) |
 | `Deployment` | `Acmp` or `Gpo` |
 | `ScriptVersion` | e.g. `1.2.0` |
 | `TargetName` | target name (only after a rename) |
+
+`LastEvent` is simply the last line written to the log, so it is not the "result" of the run: after a successful rename, `AD_VERIFY` follows `RENAMED`, and `LOG_DELIVERY` can follow when the central log is unreachable. Use `LastExitCode` for the status and `LastEvent` only as a hint. Realistic combinations:
+
+| Situation | `LastExitCode` | typical `LastEvent` |
+| --- | --- | --- |
+| renamed, reboot pending | 3010 | `AD_VERIFY` (or `LOG_DELIVERY`) |
+| rerun before the reboot | 3010 | `PENDING_REBOOT` |
+| name already matches | 0 | `ALREADY_DONE` |
+| final run with `-Cleanup` | 0 | `CLEANUP_DONE` (or `CLEANUP_DEFERRED`/`LOG_DELIVERY` while the central log is unreachable) |
+| no permission on the own AD object | 4 | `PERM_DENIED` |
+| other errors | 1 | e.g. `PRECHECK`, `RENAME_FAILED`, `COLLISION`, `LOCAL_DIR` |
 
 Further useful source: the marker `HKLM\SOFTWARE\HostRename` (`Completed`, `ComputerName`) for "done". How ACMP custom fields are defined and filled from registry values: verify in ACMP. The local log is `C:\ProgramData\HostRename\rename-local.csv`; it is kept if no central log is used.
 
@@ -206,6 +225,6 @@ Further useful source: the marker `HKLM\SOFTWARE\HostRename` (`Completed`, `Comp
 
 1. Set the delegation; no GPO link for these devices.
 2. Fill the file repository (3 scripts).
-3. Build the Client Command per section 4, first with `-WhatIf` and `-CentralLogPath ''`.
+3. Build the Client Command per section 4, first with `-WhatIf` and `-NoCentralLog` (64-bit PowerShell, see section 1).
 4. Run the device tests ([test-plan.md](test-plan.md), T3), adjust flow, texts and reboot deadline.
 5. Dry run on all devices (T4), then waves (T5).

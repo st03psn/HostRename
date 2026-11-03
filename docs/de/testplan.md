@@ -47,21 +47,26 @@ Die Skripte in `C:\Test` sind Kopien der drei Skripte. Spalte „Ergebnis“ aus
 
 ## T3-B: Umbenennung (`Invoke-HostRename.ps1`, ACMP-Modus)
 
-`-Deployment Acmp -CentralLogPath ''` verwenden, außer das zentrale Log ist selbst Testgegenstand. Danach prüfen: `Get-ItemProperty HKLM:\SOFTWARE\HostRenameState`, `C:\ProgramData\HostRename\rename-local.csv`.
+`-Deployment Acmp -NoCentralLog` verwenden, außer das zentrale Log ist selbst Testgegenstand. In einer 64-Bit-PowerShell ausführen (außer R12). Danach prüfen: `Get-ItemProperty HKLM:\SOFTWARE\HostRenameState`, `C:\ProgramData\HostRename\rename-local.csv` (nur für Administratoren und SYSTEM lesbar).
 
 | ID | Voraussetzung | Schritte | Erwartetes Ergebnis | Ergebnis |
 | --- | --- | --- | --- | --- |
-| R1 | Kabel, Delegation gesetzt, Testgerät | `.\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "<Regel>" -CentralLogPath '' -WhatIf`; `echo $LASTEXITCODE` | Exit 0, Ereignis `WHATIF` mit dem Zielnamen; kein `LastRun` geschrieben | |
-| R2 | R1 bestanden | wie oben ohne `-WhatIf` | Exit 3010, Ereignis `RENAMED`; `HostRenameState`: `TargetName`, `LastExitCode=3010`, `LastEvent`, `Deployment=Acmp`, `ScriptVersion=1.2.0`; Marker `HKLM\SOFTWARE\HostRename` fehlt; kein Neustart gestartet | |
+| R1 | Kabel, Delegation gesetzt, Testgerät | `.\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "<Regel>" -NoCentralLog -WhatIf`; `echo $LASTEXITCODE` | Exit 0, Ereignis `WHATIF` mit dem Zielnamen auf stdout (`-WhatIf` schreibt keine Logdatei); kein `LastRun` geschrieben | |
+| R2 | R1 bestanden | wie oben ohne `-WhatIf` | Exit 3010, Ereignis `RENAMED` im lokalen Log; `HostRenameState`: `TargetName`, `LastExitCode=3010`, `LastEvent` (meist `AD_VERIFY`, das letzte Ereignis des Laufs), `Deployment=Acmp`, `ScriptVersion=1.2.0`; Marker `HKLM\SOFTWARE\HostRename` fehlt; kein Neustart gestartet | |
 | R3 | nach R2, vor dem Neustart | erneut ausführen | Exit 3010 (Umbenennung ausstehend, Ereignis `PENDING_REBOOT`) | |
-| R4 | vor dem Neustart | `-Reboot` ergänzen | Ereignis `REBOOT_IGNORED`, kein Neustart | |
+| R4 | nach R2, vor dem Neustart | erneut mit `-Reboot` ausführen | Exit 3010; Warnung `REBOOT_IGNORED` im lokalen Log (vor `PENDING_REBOOT`); kein Neustart | |
 | R5 | nach R2 | Neustart, dann mit `-Cleanup` ausführen | Exit 0; Marker `HKLM\SOFTWARE\HostRename` existiert; Skriptdatei und Ordner noch vorhanden; lokale Logs bleiben (kein zentrales Log) | |
 | R6 | DirectAccess, kein Kabel | R1, dann R2 | wie R2 | |
 | R7 | R6 erledigt | **nicht neu starten**; nach mehreren Stunden prüfen: DA-Tunnel, ACMP-Verbindung, Log-Share erreichbar (`Test-Path \\<Server>\HostRename$\log`), Domänenanmeldung des Computerkontos (`nltest /sc_verify:<Domäne>`) | notieren, was wann ausfällt (Grundlage für die Neustart-Frist) | |
 | R8 | R7 | Neustart über DA | DA verbindet sich wieder, Gerät erreicht die Domäne; Zeit bis zur Verbindung notieren | |
 | R9 | zentrales Log gewünscht | R2 mit `-CentralLogPath "\\<Server>\HostRename$\log\rename-log.csv"` und später `-Cleanup` | Einträge im zentralen CSV (START-Meldung `HostRename 1.2.0: deployment Acmp, ...`); nach dem Cleanup sind die lokalen Logs entfernt | |
-| R10 | R2 mit `-CentralLogPath ''` und `-Cleanup` | `C:\ProgramData\HostRename` prüfen | lokale Logs bleiben; keine Verschiebung (`CLEANUP_DEFERRED` fehlt) | |
+| R10 | R2 mit `-NoCentralLog` und `-Cleanup` | `C:\ProgramData\HostRename` prüfen | lokale Logs bleiben; keine Verschiebung (`CLEANUP_DEFERRED` fehlt) | |
 | R11 | jeder Lauf | nach jedem Lauf | `HostRenameState` existiert nach jedem Lauf (auch nach Fehlern und „nichts zu tun“); der Marker nur nach dem Cleanup | |
+| R12 | 64-Bit-Windows | R1 ohne `-WhatIf` in der 32-Bit-PowerShell: `%SystemRoot%\SysWOW64\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp ...` | Exit 1, `[ERROR] PLATFORM` auf stdout; keine neuen Werte in `HostRenameState` oder `HKLM\SOFTWARE\WOW6432Node\HostRenameState`; kein lokales Log | |
+| R13 | nach einem beliebigen Lauf | `icacls C:\ProgramData\HostRename` und `icacls C:\ProgramData\HostRename\rename-local.csv` | Besitzer `Administratoren`; keine geerbten Einträge; nur `SYSTEM` und `Administratoren` mit Vollzugriff | |
+| R14 | Testgerät; `C:\ProgramData\HostRename` als Administrator gelöscht | als **Standardbenutzer**: `mkdir C:\ProgramData\HostRename`; dann R1 ohne `-WhatIf` als SYSTEM | Exit 1, `[ERROR] LOCAL_DIR ... owner ...` auf stdout; nichts in den Ordner geschrieben; `LastExitCode=1`, `LastEvent=LOCAL_DIR`. Danach den Ordner als Administrator löschen | |
+| R15 | wie R14, Ordner gelöscht | als Administrator: `mklink /J C:\ProgramData\HostRename C:\Temp\x` (Ziel existiert), dann als SYSTEM ausführen | Exit 1, `[ERROR] LOCAL_DIR ... reparse point`; nichts nach `C:\Temp\x` geschrieben. Danach die Junction entfernen (`rmdir C:\ProgramData\HostRename`) | |
+| R16 | cmd.exe als SYSTEM | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "<Regel>" -CentralLogPath '' -WhatIf` | läuft wie R1 (`LOG_CHECK`: zentrales Log abgeschaltet); keine Datei namens `''` im Arbeitsverzeichnis | |
 
 ## T3-C: WLAN-Verhalten und Zertifikat
 
@@ -85,7 +90,7 @@ Ziel: klären, ob die Umbenennung das EAP-TLS-WLAN bricht (starke Zertifikatszuo
 
 | ID | Voraussetzung | Schritte | Erwartetes Ergebnis | Ergebnis |
 | --- | --- | --- | --- | --- |
-| A1 | Test-Client-Command mit einem Skript, das `exit 3010` ausführt | über ACMP starten | notieren: wird 3010 unverändert durchgereicht und ist in einer Bedingung nutzbar? | |
+| A1 | Test-Client-Command mit einem Skript, das `exit 3010` ausführt | über ACMP starten | notieren: wird 3010 unverändert durchgereicht und ist in einer Bedingung nutzbar, oder als ACMP-Code gedeutet (3010 liegt zahlenmäßig im eigenen Bereich von ACMP ab 1001)? Außerdem notieren, ob der Agent ein 32- oder 64-Bit-`powershell.exe` startet (`[Environment]::Is64BitProcess`); bei 32 Bit `%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe` verwenden | |
 | A2 | dasselbe mit `exit 20`, `exit 1`, `exit 5` | über ACMP starten | notieren: Exit-Codes 1 bis 99 werden durchgereicht | |
 | A3 | ein Client-Command, der als SYSTEM läuft | einen Dialog zeigen (z. B. „Bitte LAN-Kabel anschließen“) | notieren: erscheint der Dialog in der Sitzung des angemeldeten Benutzers? | |
 | A4 | Testclient durch den Client-Command umbenennen (R2) | vor und nach dem Neustart die ACMP-Konsole ansehen | notieren: dasselbe Client-Objekt oder Duplikat? Historie, Container-/Gruppenregeln nach Namen, Inventar | |
@@ -123,9 +128,9 @@ Nach einer Umbenennung auf einem Testgerät prüfen, was noch auf den alten Name
 
 ## T4: Probelauf auf allen Geräten
 
-`Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "<Regel>" -CentralLogPath '' -WhatIf` über ACMP auf allen Geräten ausführen. Es ändert nichts und schreibt keine Berichtswerte.
+`Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "<Regel>" -NoCentralLog -WhatIf` über ACMP auf allen Geräten ausführen. Es ändert nichts, schreibt keine Berichtswerte und keine lokale Logdatei.
 
-Pro Gerät erfassen: ACMP-Exit-Code, das Ereignis `WHATIF` mit dem Zielnamen (aus dem lokalen Log `C:\ProgramData\HostRename\rename-local.csv` oder der ACMP-Ausgabe) und den Exit-Code des Gates, wo es Teil des Laufs ist.
+Pro Gerät erfassen: ACMP-Exit-Code, das Ereignis `WHATIF` mit dem Zielnamen aus der **ACMP-Ausgabe (stdout)** (`-WhatIf` unterdrückt alle Dateizugriffe, das lokale Log enthält es daher nicht) und den Exit-Code des Gates, wo es Teil des Laufs ist.
 
 Auswerten:
 

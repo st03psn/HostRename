@@ -31,6 +31,7 @@
       Domain          DNS SRV record _ldap._tcp.dc._msdcs.<domain> resolves (Resolve-DnsName) and TCP port 389
                       of at least one of the first three DCs answers within 1.5 s. The connection is opened per
                       resolved address with its own address family, so IPv6-only paths (DirectAccess) work too.
+                      All addresses of a DC are tried (IPv6 and IPv4), at most 6 connection attempts in total.
 
     DECISION (in this order)
       1. Allowed path detected: LAN (if Lan allowed), else DirectAccess (if allowed), else corporate WLAN
@@ -288,15 +289,31 @@ function Get-WlanSsid {
     $conn
 }
 
+function Resolve-HostAddress {
+    # Distinct addresses of a host in resolver order (throws if the name cannot be resolved).
+    param([Parameter(Mandatory)][string]$ComputerName)
+    $seen = @{}
+    foreach ($a in [System.Net.Dns]::GetHostAddresses($ComputerName)) {
+        $k = $a.ToString()
+        if (-not $seen.ContainsKey($k)) { $seen[$k] = $true; $a }
+    }
+}
+
 function Test-TcpPort {
-    # True if a TCP connection to one of the addresses of the host succeeds within the timeout.
+    # True if a TCP connection to one of the addresses of the host succeeds within the timeout (per address).
     # One socket per address with its own address family (the default TcpClient is IPv4 only in .NET Framework).
-    param([string]$ComputerName, [int]$Port, [int]$TimeoutMs = 1500)
-    try { $addrs = @([System.Net.Dns]::GetHostAddresses($ComputerName)) }
-    catch { Write-Verbose "'$ComputerName' cannot be resolved: $($_.Exception.Message)"; return $false }
-    foreach ($addr in ($addrs | Select-Object -First 2)) {
-        $tcp = New-Object System.Net.Sockets.TcpClient -ArgumentList $addr.AddressFamily
+    # All distinct addresses are tried in resolver order, at most -MaxAttempts. -Address skips the name resolution.
+    param([string]$ComputerName, [int]$Port, [int]$TimeoutMs = 1500, [int]$MaxAttempts = 6, [object[]]$Address)
+    $addrs = @($Address | Where-Object { $_ })
+    if (-not $addrs.Count) {
+        try { $addrs = @(Resolve-HostAddress -ComputerName $ComputerName) }
+        catch { Write-Verbose "'$ComputerName' cannot be resolved: $($_.Exception.Message)"; return $false }
+    }
+    foreach ($addr in ($addrs | Select-Object -First $MaxAttempts)) {
+        $tcp = $null
         try {
+            # Inside try: creating an IPv6 socket throws on a host without IPv6
+            $tcp = New-Object System.Net.Sockets.TcpClient -ArgumentList $addr.AddressFamily
             $iar = $tcp.BeginConnect($addr, $Port, $null, $null)
             if ($iar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) {
                 $tcp.EndConnect($iar)
@@ -305,14 +322,16 @@ function Test-TcpPort {
             Write-Verbose "Port $Port on $ComputerName ($addr): timeout after $TimeoutMs ms."
         }
         catch { Write-Verbose "Port $Port on $ComputerName ($addr): $($_.Exception.Message)" }
-        finally { $tcp.Close() }
+        finally { if ($tcp) { $tcp.Close() } }
     }
     return $false
 }
 
 function Test-DomainReachable {
     # DNS SRV lookup for the DCs of the domain, then TCP 389 on the first DCs (by priority and weight).
-    param([string]$DomainName, [int]$TimeoutMs = 1500, [int]$MaxDc = 3)
+    # Every distinct address of a DC is tried (a DC that publishes an unreachable IPv6 address first is still
+    # tried over IPv4), with at most -MaxAttempts connection attempts in total across all DCs.
+    param([string]$DomainName, [int]$TimeoutMs = 1500, [int]$MaxDc = 3, [int]$MaxAttempts = 6)
     $res = [pscustomobject]@{ Reachable = $false; DnsOk = $false; Dc = ''; Error = '' }
     $query = "_ldap._tcp.dc._msdcs.$DomainName"
     try { $records = @(Resolve-DnsName -Name $query -Type SRV -DnsOnly -QuickTimeout -ErrorAction Stop) }
@@ -332,8 +351,15 @@ function Test-DomainReachable {
         return $res
     }
     $res.DnsOk = $true
+    $left = $MaxAttempts
     foreach ($t in ($targets | Select-Object -First $MaxDc)) {
-        if (Test-TcpPort -ComputerName $t -Port 389 -TimeoutMs $TimeoutMs) {
+        if ($left -le 0) { Write-Verbose "Limit of $MaxAttempts connection attempts reached."; break }
+        try { $addrs = @(Resolve-HostAddress -ComputerName $t) }
+        catch { Write-Verbose "DC '$t' cannot be resolved: $($_.Exception.Message)"; continue }
+        if (-not $addrs.Count) { Write-Verbose "DC '$t' resolves to no address."; continue }
+        $batch = @($addrs | Select-Object -First $left)
+        $left -= $batch.Count
+        if (Test-TcpPort -ComputerName $t -Port 389 -TimeoutMs $TimeoutMs -Address $batch -MaxAttempts $batch.Count) {
             $res.Reachable = $true
             $res.Dc = $t
             Write-Verbose "DC '$t' answers on port 389."

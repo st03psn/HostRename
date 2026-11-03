@@ -273,7 +273,7 @@ Describe 'Name template on this device (preview, phase PreRun only)' {
     It 'yields a valid target name for this device' {
         if ($phaseResolved -ne 'PreRun') { Set-ItResult -Skipped -Because "Phase is $phaseResolved"; return }
         $plan | Should -Not -BeNullOrEmpty -Because 'No rule configured or no usable serial number'
-        Write-Host "    Vorschau: $($names.Active) -> $($plan.Name)$(if ($plan.Truncated) { '  (shortened)' })"
+        Write-Host "    Preview: $($names.Active) -> $($plan.Name)$(if ($plan.Truncated) { '  (shortened)' })"
         $plan.Ok | Should -BeTrue -Because $plan.Error
     }
     It 'the target name matches the expected pattern (NameLike)' {

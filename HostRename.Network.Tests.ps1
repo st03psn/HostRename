@@ -383,7 +383,7 @@ Describe 'Get-WinRtWlanConnection' {
     }
 }
 
-Describe 'Test-DomainReachable (mocked Resolve-DnsName / Test-TcpPort)' {
+Describe 'Test-DomainReachable (mocked Resolve-DnsName / Resolve-HostAddress / Test-TcpPort)' {
     BeforeEach {
         Mock Resolve-DnsName {
             [pscustomobject]@{ Name = $Name; Type = 'SRV'; NameTarget = 'dc2.corp.example'; Priority = 10; Weight = 100; Port = 389 }
@@ -391,6 +391,8 @@ Describe 'Test-DomainReachable (mocked Resolve-DnsName / Test-TcpPort)' {
             [pscustomobject]@{ Name = $Name; Type = 'SRV'; NameTarget = 'dc3.corp.example'; Priority = 0;  Weight = 100; Port = 389 }
             [pscustomobject]@{ Name = 'dc1.corp.example'; Type = 'A'; IPAddress = '192.0.2.10' }   # additional record
         }
+        # One address per DC by default (default mock without a parameter filter, as Pester 6 requires)
+        Mock Resolve-HostAddress { [System.Net.IPAddress]::Parse('192.0.2.1') }
     }
     It 'queries the DC SRV record of the domain and tries DCs by priority, then weight' {
         Mock Test-TcpPort { $ComputerName -eq 'dc1.corp.example' }
@@ -424,11 +426,87 @@ Describe 'Test-DomainReachable (mocked Resolve-DnsName / Test-TcpPort)' {
         $r.Error | Should -Match 'DNS SRV lookup'
         Should -Invoke Test-TcpPort -Times 0 -Exactly
     }
+    It 'tries every address of a DC (IPv6 first, then IPv4) with the address list handed to Test-TcpPort' {
+        Mock Resolve-HostAddress {
+            [System.Net.IPAddress]::Parse('2001:db8::10')
+            [System.Net.IPAddress]::Parse('fd00::10')
+            [System.Net.IPAddress]::Parse('192.0.2.10')
+        }
+        Mock Test-TcpPort { @($Address | Where-Object { $_.AddressFamily -eq 'InterNetwork' }).Count -gt 0 }
+        $r = Test-DomainReachable -DomainName 'corp.example'
+        $r.Reachable | Should -BeTrue
+        $r.Dc | Should -Be 'dc3.corp.example'
+        Should -Invoke Test-TcpPort -Times 1 -Exactly -ParameterFilter { @($Address).Count -eq 3 -and $MaxAttempts -eq 3 }
+    }
+    It 'caps the connection attempts at -MaxAttempts across all DCs' {
+        Mock Resolve-HostAddress {
+            [System.Net.IPAddress]::Parse('2001:db8::10')
+            [System.Net.IPAddress]::Parse('fd00::10')
+            [System.Net.IPAddress]::Parse('192.0.2.10')
+            [System.Net.IPAddress]::Parse('192.0.2.11')
+        }
+        Mock Test-TcpPort { $false }
+        $r = Test-DomainReachable -DomainName 'corp.example'
+        $r.Reachable | Should -BeFalse
+        # dc3: 4 addresses, dc1: the remaining 2 of 6, dc2: none left
+        Should -Invoke Test-TcpPort -Times 1 -Exactly -ParameterFilter { $ComputerName -eq 'dc3.corp.example' -and @($Address).Count -eq 4 }
+        Should -Invoke Test-TcpPort -Times 1 -Exactly -ParameterFilter { $ComputerName -eq 'dc1.corp.example' -and @($Address).Count -eq 2 }
+        Should -Invoke Test-TcpPort -Times 0 -Exactly -ParameterFilter { $ComputerName -eq 'dc2.corp.example' }
+    }
+    It 'skips a DC whose name cannot be resolved' {
+        Mock Resolve-HostAddress { throw 'No such host is known' } -ParameterFilter { $ComputerName -eq 'dc3.corp.example' }
+        Mock Test-TcpPort { $true }
+        $r = Test-DomainReachable -DomainName 'corp.example'
+        $r.Dc | Should -Be 'dc1.corp.example'
+        Should -Invoke Test-TcpPort -Times 0 -Exactly -ParameterFilter { $ComputerName -eq 'dc3.corp.example' }
+    }
     It 'DNS answer without SRV records' {
         Mock Resolve-DnsName { [pscustomobject]@{ Type = 'SOA'; PrimaryServer = 'ns.example' } }
         $r = Test-DomainReachable -DomainName 'corp.example'
         $r.DnsOk | Should -BeFalse
         $r.Error | Should -Match 'no DC'
+    }
+}
+
+Describe 'Resolve-HostAddress' {
+    It 'returns distinct addresses' {
+        $a = @(Resolve-HostAddress -ComputerName '127.0.0.1')
+        $a.Count | Should -Be 1
+        $a[0].ToString() | Should -Be '127.0.0.1'
+    }
+    It 'throws for a name that cannot be resolved' {
+        $unknown = 'no-such-host.invalid'
+        { Resolve-HostAddress -ComputerName $unknown } | Should -Throw
+    }
+}
+
+Describe 'Test-TcpPort (mocked Resolve-HostAddress)' {
+    BeforeAll { $dcName = 'dc.example' }
+    It 'tries each distinct address with its own address family, at most -MaxAttempts' {
+        Mock Resolve-HostAddress {
+            [System.Net.IPAddress]::Parse('::1')
+            [System.Net.IPAddress]::Parse('127.0.0.1')
+        }
+        $listener = New-Object System.Net.Sockets.TcpListener -ArgumentList ([System.Net.IPAddress]::Loopback), 0
+        $listener.Start()
+        try {
+            $port = $listener.LocalEndpoint.Port
+            # ::1 is not listening (IPv4 listener only): the IPv4 address must still be tried
+            Test-TcpPort -ComputerName $dcName -Port $port -TimeoutMs 2000 | Should -BeTrue
+            Test-TcpPort -ComputerName $dcName -Port $port -TimeoutMs 2000 -MaxAttempts 1 | Should -BeFalse
+        }
+        finally { $listener.Stop() }
+    }
+    It 'uses -Address without resolving the name' {
+        Mock Resolve-HostAddress { throw 'must not be called' }
+        $listener = New-Object System.Net.Sockets.TcpListener -ArgumentList ([System.Net.IPAddress]::Loopback), 0
+        $listener.Start()
+        try {
+            $port = $listener.LocalEndpoint.Port
+            Test-TcpPort -ComputerName $dcName -Port $port -TimeoutMs 2000 -Address @([System.Net.IPAddress]::Loopback) | Should -BeTrue
+        }
+        finally { $listener.Stop() }
+        Should -Invoke Resolve-HostAddress -Times 0 -Exactly
     }
 }
 

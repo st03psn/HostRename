@@ -53,6 +53,23 @@ Results from T3 that require changes (e.g. other exit codes, different detection
 - Building the ACMP client command in the ACMP console. The guide describes it step by step.
 - The reboot deadline in ACMP. It is decided during T3.
 
-## Status
+## Status (3 November 2026)
 
-Updated at the end of the 1.2.0 work, see the section at the bottom of this file.
+| # | Status | Notes |
+| --- | --- | --- |
+| 1–2 | done | Baseline imported, history and roadmap written |
+| 3–5 | done | Scripts and docs in English; code tokens unchanged by the translation; German versions in `README.de.md` and `docs/de/` |
+| 6 | done | Network gate, mock-tested |
+| 7 | done | Certificate renewal, mock-tested with real test certificates |
+| 8 | done | ACMP mode, optional central log (`-NoCentralLog`), reporting values |
+| 9 | done | ACMP guide and device test plan |
+| 10 | done | Version 1.2.0, CI, templates |
+| 11 | done | Independent review. Fixed: unsafe disabling of the central log, user-writable ACMP log folder (now hardened), 32-bit process detection, IPv6 address handling, documentation errors |
+| 12 | done | PR to `main` |
+
+Test status of the automated phases:
+
+- **T1 (Linux, PowerShell 7, Pester 5 and 6):** Local 48 passed, 20 failed, 5 skipped. The failures are Windows-only tests that are covered by T2. Network 89 passed, 1 skipped. Certificate 69 passed. Acmp 83 passed.
+- **T2 (GitHub Actions, Windows PowerShell 5.1 and 7):** green, including the Windows-only Local tests.
+
+**Next: T3 device tests by the owner** following [test-plan.md](test-plan.md). Nothing in 1.2.0 has run on a real domain client, DirectAccess, WLAN/AD CS or ACMP yet.

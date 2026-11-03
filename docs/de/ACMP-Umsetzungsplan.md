@@ -59,7 +59,9 @@ Das Gate gehört nicht in das Client-Skript, sondern bleibt eigenständig: So l�
 Die Logik bleibt, ebenso die Exit-Codes (0, 3010, 1, 2, 4, 5). Anzupassen:
 - Bei `-Cleanup` darf das Skript seine eigene Datei nicht löschen, wenn es nicht aus `$LocalFolder` läuft (unter ACMP liegt es in dessen Ablage). Vorschlag: Schalter `-KeepScript` oder Erkennung über den Pfad. Den Task entfernt die Bereinigung ohnehin nur, wenn er existiert.
 - Kein `-Reboot`: Den Neustart steuert ACMP.
-- Lokale Logs über `-LocalDir` an einen festen Ort (im ACMP-Modus `C:\ProgramData\HostRename`).
+- Lokale Logs über `-LocalDir` an einen festen Ort (im ACMP-Modus `C:\ProgramData\HostRename`; umgesetzt als geschützter Ordner: Prüfung von Besitzer und Analysepunkt, ACL nur SYSTEM und Administratoren, weil Standardbenutzer in ProgramData Ordner anlegen dürfen).
+- Nur 64-Bit-PowerShell (umgesetzt: ein 32-Bit-Prozess auf 64-Bit-Windows endet mit Exit 1, bevor etwas geschrieben wird; ein 32-Bit-Agent ruft `%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe` auf).
+- Ohne zentrales Log: `-NoCentralLog` (umgesetzt; `-CentralLogPath ''` ist mit `powershell.exe -File` unzuverlässig).
 - Zentrales CSV-Log optional beibehalten (über DA erreichbar?), Rückmeldung zusätzlich über ACMP (siehe 5).
 
 ### 3. Zertifikatserneuerung (`Update-ComputerCertificate.ps1`, neu, wiederverwendbar)
@@ -87,7 +89,7 @@ Ablauf in einem Client Command (Bausteine aus dem Editor: Dateien/File Repositor
    - 2, 4, 5: dauerhaftes Problem (Name zu lang, keine Rechte, keine Seriennummer), nicht wiederholen, in den Bericht.
 6. Nach dem Neustart (nächster Lauf, wieder über das Gate): Zertifikat erneuern (nur für WLAN-Geräte), dann `Invoke-HostRename.ps1 -Cleanup` (ACMP-Modus), Status melden.
 
-Exit-Codes der Skripte bleiben unter 100, weil ACMP eigene Codes ab 100 und ab 1001 verwendet.
+Die Exit-Codes der Skripte sind 0 bis 5, 20 bis 22 und 3010. ACMP verwendet eigene Codes ab 100 und ab 1001; alle Skriptcodes außer 3010 bleiben darunter. 3010 überschneidet sich zahlenmäßig mit dem Bereich von ACMP: in ACMP prüfen, wie es behandelt wird (Gerätetest A1).
 
 **Neustart-Regeln (zu entscheiden):** Verschieben nur begrenzt (z. B. bis Arbeitsende, höchstens X Stunden), danach Neustart mit Vorwarnung. Begründung: Zwischenzustand alter/neuer Name, bei DA Risiko für den Tunnel. Prüfen, ob der vorhandene ACMP-Neustart-Dialog (Windows Update Management) dafür nutzbar ist.
 
@@ -146,6 +148,6 @@ Der Rahmen besteht aus vier austauschbaren Teilen: Gate mit erlaubten Wegen, eig
 - **Neustart-Frist:** noch offen, wird in der Testphase festgelegt (ACMP-Seite).
 - **Zertifikatsvorlage für das WLAN:** noch unbekannt, daher Pflichtparameter; alte Zertifikate werden nur mit dem Schalter `-RemoveOld` entfernt.
 - **Zentrales CSV-Log:** bleibt als Option zusätzlich zur ACMP-Rückmeldung.
-- **Lokale Logs im ACMP-Modus:** `C:\ProgramData\HostRename`.
+- **Lokale Logs im ACMP-Modus:** `C:\ProgramData\HostRename` (vom Skript vor jedem Lauf geschützt; ein ausdrücklich angegebenes `-LocalDir` darf für Standardbenutzer nicht beschreibbar sein).
 - **GPO-Weg:** bleibt erhalten; GPO und ACMP sind alternative Verteilwege und nie gleichzeitig auf demselben Gerät aktiv.
 - **Phase 0 ist keine Voraussetzung mehr:** Der Nutzer kann sie nicht vorab einplanen; Geräteprüfungen sind Teil der Testphasen in `docs/roadmap.md`.

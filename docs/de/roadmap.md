@@ -53,6 +53,23 @@ Ergebnisse aus T3, die Änderungen erfordern (z. B. andere Exit-Codes oder eine 
 - Der Bau des ACMP Client Commands in der ACMP-Konsole. Die Anleitung beschreibt ihn Schritt für Schritt.
 - Die Neustart-Frist in ACMP. Sie wird in T3 festgelegt.
 
-## Status
+## Status (3. November 2026)
 
-Wird am Ende der Arbeiten an 1.2.0 aktualisiert, siehe Abschnitt am Ende dieser Datei.
+| Nr. | Status | Hinweise |
+| --- | --- | --- |
+| 1–2 | erledigt | Ausgangsstand importiert, Verlauf und Roadmap geschrieben |
+| 3–5 | erledigt | Skripte und Doku auf Englisch; die Übersetzung hat keine Code-Tokens verändert; deutsche Fassungen in `README.de.md` und `docs/de/` |
+| 6 | erledigt | Netzwerk-Gate, mit Mocks getestet |
+| 7 | erledigt | Zertifikatserneuerung, mit Mocks und echten Testzertifikaten getestet |
+| 8 | erledigt | ACMP-Modus, optionales zentrales Log (`-NoCentralLog`), Berichtswerte |
+| 9 | erledigt | ACMP-Anleitung und Testplan für Gerätetests |
+| 10 | erledigt | Version 1.2.0, CI, Vorlagen |
+| 11 | erledigt | Unabhängiges Review. Behoben: unsicheres Abschalten des zentralen Logs, von Benutzern beschreibbarer ACMP-Log-Ordner (jetzt abgesichert), Erkennung eines 32-Bit-Prozesses, Umgang mit IPv6-Adressen, Fehler in der Doku |
+| 12 | erledigt | PR nach `main` |
+
+Teststand der automatischen Phasen:
+
+- **T1 (Linux, PowerShell 7, Pester 5 und 6):** Local 48 bestanden, 20 fehlgeschlagen, 5 übersprungen. Die Fehler sind reine Windows-Tests, die T2 abdeckt. Network 89 bestanden, 1 übersprungen. Certificate 69 bestanden. Acmp 83 bestanden.
+- **T2 (GitHub Actions, Windows PowerShell 5.1 und 7):** grün, einschließlich der reinen Windows-Tests aus Local.
+
+**Als Nächstes: T3, Gerätetests durch den Inhaber** nach [test-plan.md](test-plan.md). Nichts aus 1.2.0 ist bisher auf einem echten Domänen-Client, über DirectAccess, mit WLAN/AD CS oder in ACMP gelaufen.

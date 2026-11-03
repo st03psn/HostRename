@@ -59,7 +59,9 @@ The gate does not belong in the client script but stays standalone: this way it 
 The logic stays, as do the exit codes (0, 3010, 1, 2, 4, 5). To adapt:
 - With `-Cleanup`, the script must not delete its own file if it does not run from `$LocalFolder` (under ACMP it lives in ACMP's storage). Proposal: switch `-KeepScript` or detection via the path. The cleanup removes the task only if it exists anyway.
 - No `-Reboot`: ACMP controls the reboot.
-- Local logs via `-LocalDir` in a fixed location (in ACMP mode `C:\ProgramData\HostRename`).
+- Local logs via `-LocalDir` in a fixed location (in ACMP mode `C:\ProgramData\HostRename`; implemented as a protected folder: owner and reparse-point check, ACL only SYSTEM and Administrators, because standard users can create folders in ProgramData).
+- 64-bit PowerShell only (implemented: a 32-bit process on 64-bit Windows ends with exit 1 before writing anything; a 32-bit agent calls `%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe`).
+- Without a central log: `-NoCentralLog` (implemented; `-CentralLogPath ''` is unreliable with `powershell.exe -File`).
 - Keep the central CSV log as an option (reachable via DA?), with feedback additionally via ACMP (see 5).
 
 ### 3. Certificate renewal (`Update-ComputerCertificate.ps1`, new, reusable)
@@ -87,7 +89,7 @@ Flow in one Client Command (building blocks from the editor: files/file reposito
    - 2, 4, 5: permanent problem (name too long, no permissions, no serial number), do not retry, into the report.
 6. After the reboot (next run, again through the gate): renew the certificate (WLAN devices only), then `Invoke-HostRename.ps1 -Cleanup` (ACMP mode), report status.
 
-Script exit codes stay below 100, because ACMP uses its own codes from 100 and from 1001.
+Script exit codes are 0 to 5, 20 to 22 and 3010. ACMP uses its own codes from 100 and from 1001; all script codes except 3010 stay below that. 3010 overlaps numerically with ACMP's range: verify in ACMP how it is treated (device test A1).
 
 **Reboot rules (open):** postpone only to a limited extent (e.g. until end of work, at most X hours), then reboot with advance warning. Reason: intermediate state of old/new name, risk to the tunnel with DA. Check whether the existing ACMP reboot dialog (Windows Update Management) can be used for this.
 
@@ -146,6 +148,6 @@ The framework consists of four interchangeable parts: gate with allowed paths, t
 - **Reboot deadline:** still open, to be determined in the test phase (ACMP side).
 - **WLAN certificate template:** not known yet, therefore a mandatory parameter; old certificates are only removed with a switch (`-RemoveOld`).
 - **Central CSV log:** kept as an option in addition to ACMP reporting.
-- **Local logs in ACMP mode:** `C:\ProgramData\HostRename`.
+- **Local logs in ACMP mode:** `C:\ProgramData\HostRename` (protected by the script before every run; an explicit `-LocalDir` must not be writable for standard users).
 - **GPO path:** kept; GPO and ACMP are alternative deployment methods, never both active on the same device.
 - **Phase 0 is no longer a precondition:** the owner cannot plan it upfront; device tests are part of the test phases in `docs/roadmap.md`.

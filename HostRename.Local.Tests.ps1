@@ -8,7 +8,8 @@
     CHECKS
       1. Syntax of all .ps1 files in the script folder; consistent version information (variable in the client script and .NOTES)
       2. Are the CSE GUIDs for GPP "Files", "Scheduled Tasks" and "Registry" known on this system (gpprefcl.dll)?
-      3. Do the icacls commands of the task work (owner and ACL of the local folder)?
+      3. Do the icacls commands of the task work (owner and ACL of the local folder)? Does the protection of the
+         ACMP log folder (Initialize-LocalDir in Invoke-HostRename.ps1) work on a real NTFS folder (skipped off-Windows)?
       4. Can a scheduled task running as SYSTEM delete itself and then remove its own script file
          (basis of -Cleanup)?
       5. Name logic, loaded from Invoke-HostRename.ps1: name templates (placeholders, length specifications,
@@ -24,7 +25,7 @@
     Invoke-Pester -Path .\HostRename.Local.Tests.ps1 -Output Detailed
 
 .NOTES
-    Produkt          HostRename
+    Product          HostRename
     Version          1.2.0
     Date             2026-11-03
     Execution        Administrator on the DC or client (Windows PowerShell 5.1)
@@ -41,6 +42,7 @@ param(
 
 BeforeDiscovery {
     $folder = if ($ScriptFolder) { $ScriptFolder } else { $PSScriptRoot }
+    $OnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
     $ScriptFiles = @(Get-ChildItem -Path $folder -Filter '*.ps1' | ForEach-Object { @{ Name = $_.Name; Path = $_.FullName } })
     $CseCases = @(
         @{ Name = 'Preferences: Files';           Guid = '{7150F9BF-48AD-4DA4-A49C-29EF4A8369BA}' }
@@ -203,6 +205,79 @@ Describe 'Folder hardening via icacls (commands from the scheduled task)' {
         foreach ($rule in $r) {
             ($rule.FileSystemRights -band $writeMask) | Should -Be 0
         }
+    }
+}
+
+Describe 'Protected ACMP log folder (Initialize-LocalDir on a real NTFS folder)' -Skip:(-not $OnWindows) {
+    BeforeAll {
+        $invokePath = Join-Path $ScriptFolder 'Invoke-HostRename.ps1'
+        $tk = $null; $er = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($invokePath, [ref]$tk, [ref]$er)
+        $wanted = @('Get-OwnerSid', 'Set-LocalDirAcl', 'Initialize-LocalDir')
+        $fns = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -in $wanted }, $true)
+        . ([scriptblock]::Create((($fns | ForEach-Object { $_.Extent.Text }) -join "`n")))
+
+        $base = Join-Path $env:ProgramData ('HostRename-Pester-' + [guid]::NewGuid().ToString('N'))
+        $dir  = Join-Path $base 'HostRename'
+        New-Item -ItemType Directory -Path $base -Force | Out-Null
+        $sidT = [System.Security.Principal.SecurityIdentifier]
+        function Get-RuleSid { param($Path) @((Get-Acl -LiteralPath $Path).GetAccessRules($true, $true, $sidT) | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique) }
+        function Invoke-Icacls { $ErrorActionPreference = 'Continue'; & icacls.exe @args 2>$null | Out-Null; $LASTEXITCODE }
+    }
+    AfterAll {
+        if ($base -and (Test-Path $base)) {
+            Get-ChildItem -LiteralPath $base -Recurse -Force -Attributes ReparsePoint -ErrorAction SilentlyContinue | ForEach-Object { [System.IO.Directory]::Delete($_.FullName) }
+            Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'creates the folder: owner Administrators, protected, full control only for SYSTEM and Administrators' {
+        Initialize-LocalDir -Path $dir | Should -BeExactly ''
+        $acl = Get-Acl -LiteralPath $dir
+        $acl.GetOwner($sidT).Value | Should -Be 'S-1-5-32-544'
+        $acl.AreAccessRulesProtected | Should -BeTrue
+        Get-RuleSid $dir | Should -Be @('S-1-5-18', 'S-1-5-32-544')
+        foreach ($r in $acl.GetAccessRules($true, $true, $sidT)) {
+            $r.AccessControlType | Should -Be 'Allow'
+            ($r.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) | Should -Be ([System.Security.AccessControl.FileSystemRights]::FullControl)
+        }
+    }
+    It 'on the next run also protects the files and removes an added entry for Users' {
+        Set-Content -LiteralPath (Join-Path $dir 'rename-local.csv') -Value 'h'
+        Invoke-Icacls $dir /grant '*S-1-5-32-545:(OI)(CI)M' | Should -Be 0
+        Invoke-Icacls (Join-Path $dir 'rename-local.csv') /grant '*S-1-5-32-545:M' | Should -Be 0
+        Initialize-LocalDir -Path $dir | Should -BeExactly ''
+        Get-RuleSid $dir | Should -Be @('S-1-5-18', 'S-1-5-32-544')
+        $file = Join-Path $dir 'rename-local.csv'
+        Get-RuleSid $file | Should -Be @('S-1-5-18', 'S-1-5-32-544')
+        (Get-Acl -LiteralPath $file).GetOwner($sidT).Value | Should -Be 'S-1-5-32-544'
+        (Get-Acl -LiteralPath $file).AreAccessRulesProtected | Should -BeTrue
+    }
+    It 'refuses a junction inside the folder' {
+        $target = Join-Path $base 'target'
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        $link = Join-Path $dir 'pending.csv'
+        $ErrorActionPreference = 'Continue'
+        & cmd.exe /c mklink /J "$link" "$target" 2>$null | Out-Null
+        try { Initialize-LocalDir -Path $dir | Should -Match 'pending\.csv.*reparse point' }
+        finally { [System.IO.Directory]::Delete($link) }
+    }
+    It 'refuses the folder itself if it is a junction' {
+        $target = Join-Path $base 'target2'
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        $link = Join-Path $base 'Junction'
+        $ErrorActionPreference = 'Continue'
+        & cmd.exe /c mklink /J "$link" "$target" 2>$null | Out-Null
+        Initialize-LocalDir -Path $link | Should -Match 'reparse point'
+    }
+    It 'refuses a folder owned by Users (S-1-5-32-545)' {
+        $foreign = Join-Path $base 'Foreign'
+        New-Item -ItemType Directory -Path $foreign -Force | Out-Null
+        if ((Invoke-Icacls $foreign /setowner '*S-1-5-32-545') -ne 0) {
+            Set-ItResult -Skipped -Because 'icacls could not set a foreign owner on this machine (privilege)'
+            return
+        }
+        Initialize-LocalDir -Path $foreign | Should -Match 'owner .* is S-1-5-32-545'
     }
 }
 

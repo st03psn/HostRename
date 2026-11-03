@@ -12,6 +12,10 @@
       Acmp  Run by the ACMP agent (as SYSTEM, from ACMP's own cache folder). Local logs go to
             <ProgramData>\HostRename by default, -Reboot is ignored (ACMP controls the reboot; exit code
             3010 is the signal), and -Cleanup never deletes the script file or its folder.
+            Requires 64-bit PowerShell: in a 32-bit process on 64-bit Windows the script prints an ERROR
+            (PLATFORM) and ends with exit code 1 before writing anything (a 32-bit agent starts
+            %SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe). The default log folder is
+            protected before every run (see -LocalDir).
 
     NAME TEMPLATE
       {Name}          previous host name
@@ -39,7 +43,7 @@
                       and, once everything has arrived, the local log files together with the empty folder.
                       Until then the cleanup is deferred and made up for on the next run.
                       With -Deployment Acmp the script file and its folder are kept; the task is removed only if
-                      it exists. Without a central log (-CentralLogPath '') nothing is deferred and the local
+                      it exists. Without a central log (-NoCentralLog) nothing is deferred and the local
                       log files are kept as the only evidence.
       8. On every end, the result is written to HKLM:\SOFTWARE\HostRenameState (see REPORTING).
 
@@ -54,7 +58,7 @@
       Every event is written to the central CSV log on the share (-CentralLogPath) and to the local log
       (-LocalDir). If the share is unreachable, the entries stay in pending.csv and are delivered on the
       next run; the reason is recorded in the local log as LOG_DELIVERY.
-      The central log is optional: with -CentralLogPath '' only the local log is written.
+      The central log is optional: with -NoCentralLog only the local log is written.
 
     REPORTING
       On every script end (not with -WhatIf) these values are written to HKLM:\SOFTWARE\HostRenameState, e.g.
@@ -101,10 +105,16 @@
     Length of the generated future ID, 4 to 12 characters (default: 8).
 
 .PARAMETER CentralLogPath
-    Full path of the central CSV file on the share. The default value is a placeholder; the GPO passes the
-    real path from Prepare-HostRename.ps1. An empty value ('') disables the central log: nothing is written to
-    pending.csv, the share is not checked, and a cleanup is never deferred because of log delivery (the local
-    log files are then kept).
+    Full path of the central CSV file on the share (UNC path \\server\share\...; a local path C:\... also works).
+    The default value is a placeholder; the GPO passes the real path from Prepare-HostRename.ps1. To run without
+    a central log, use -NoCentralLog. An empty or whitespace-only value and the literal '' or "" (which
+    powershell.exe -File passes for -CentralLogPath '') also disable it; any other value that is not an absolute
+    path disables it with the warning LOG_CHECK in the local log.
+
+.PARAMETER NoCentralLog
+    Disables the central log (takes precedence over -CentralLogPath): nothing is written to pending.csv, the
+    share is not checked, and a cleanup is never deferred because of log delivery (the local log files are then
+    kept). Recommended for ACMP runs without a central log.
 
 .PARAMETER DomainCredential
     Optional: domain account with permission to rename the AD object. If omitted, the context of the
@@ -112,8 +122,8 @@
 
 .PARAMETER Reboot
     Schedules a reboot with a warning period (-RebootDelaySeconds) after a successful rename.
-    Not used with -Deployment Acmp (ACMP controls the reboot): the switch is ignored and a warning
-    (REBOOT_IGNORED) is logged.
+    Not used with -Deployment Acmp (ACMP controls the reboot): the switch is ignored and the warning
+    REBOOT_IGNORED is written to the local log on every run.
 
 .PARAMETER RebootDelaySeconds
     Warning period for the reboot in seconds (default: 900).
@@ -132,7 +142,13 @@
     Local folder for rename-local.csv and pending.csv (default: <Program Files>\HostRename). Standard users
     must not create or change anything there, so SYSTEM does not write to a folder that users can
     manipulate. The GPO passes the folder into which it copies the script.
-    With -Deployment Acmp the default is <ProgramData>\HostRename.
+    With -Deployment Acmp the default is <ProgramData>\HostRename. Because standard users may create folders in
+    ProgramData, the script protects this default folder before writing anything: if it exists, it must not be a
+    junction/symbolic link and must be owned by SYSTEM or Administrators, otherwise the script prints an ERROR
+    (LOCAL_DIR) and ends with exit code 1 without using it. It then sets owner Administrators, removes inheritance
+    and grants full control only to SYSTEM and Administrators (folder and the files in it); files in it must not be
+    reparse points and must be owned by SYSTEM or Administrators either.
+    An explicit -LocalDir is used as given (no checks): choose a folder that standard users cannot write to.
 
 .PARAMETER Deployment
     Deployment method: Gpo (default, scheduled task deployed by GPO) or Acmp (run by the ACMP agent).
@@ -154,16 +170,17 @@
     Preview of a rename by serial number: PC349219 -> DE<serial number>.
 
 .EXAMPLE
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -CentralLogPath ''
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -NoCentralLog
 
     ACMP mode without a central log: local logs in C:\ProgramData\HostRename, no reboot is scheduled
     (ACMP reacts to exit code 3010), the result is available in HKLM:\SOFTWARE\HostRenameState.
+    A 32-bit ACMP agent starts %SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe instead.
 
 .OUTPUTS
     No pipeline output. The exit code describes the result:
       0       nothing to do (name already matches the template) or -WhatIf
       3010    renamed or rename pending, reboot required
-      1       error (details in the log)
+      1       error (details in the log; with LOCAL_DIR or PLATFORM only on stdout)
       2       skipped: name too long (-OnTooLong Skip)
       4       no permission to rename on the device's own AD object
       5       no usable serial number (template with {Serial}, only with -OnSerialProblem Skip)
@@ -202,6 +219,8 @@ param(
 
     [string]$CentralLogPath = '\\FILESERVER\HostRename$\log\rename-log.csv',
 
+    [switch]$NoCentralLog,
+
     [pscredential]$DomainCredential,
 
     [switch]$Reboot,
@@ -232,24 +251,33 @@ function Resolve-LocalDir {
     Join-Path $programFiles 'HostRename'
 }
 
-$LocalDir = Resolve-LocalDir -Deployment $Deployment -LocalDir $LocalDir
+function Resolve-CentralLogPath {
+    # Effective path of the central log: '' = disabled. Disabled by -NoCentralLog, by an empty or whitespace-only
+    # value, and by the literal '' or "" (powershell.exe -File passes -CentralLogPath '' as these two characters).
+    # A remaining value that is neither a UNC path (\\server\share...) nor a rooted local path (C:\...) is also
+    # disabled, with a warning: otherwise the log would be written relative to the working directory.
+    param([string]$Path, [switch]$NoCentralLog)
+    $res = [pscustomobject]@{ Path = ''; Warning = '' }
+    if ($NoCentralLog) { return $res }
+    $p = ([string]$Path).Trim()
+    if ($p -eq "''" -or $p -eq '""') { $p = '' }
+    if (-not $p) { return $res }
+    if ($p -match '^\\\\[^\\]+\\[^\\]+' -or $p -match '^[A-Za-z]:\\') { $res.Path = $p; return $res }
+    $res.Warning = "central log path '$p' is not an absolute path - central log disabled"
+    return $res
+}
+
+$explicitLocalDir = [bool]$LocalDir   # an explicit -LocalDir is used as given (Initialize-LocalDir only guards the ACMP default)
+$LocalDir   = Resolve-LocalDir -Deployment $Deployment -LocalDir $LocalDir
 $LocalLog   = Join-Path $LocalDir 'rename-local.csv'
 $PendingLog = Join-Path $LocalDir 'pending.csv'
 $CsvHeader  = 'Timestamp;Level;Event;ComputerName;TargetName;Serial;MachineGuid;Message'
 $regCN      = 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName'
 $MarkerKey  = 'HKLM:\SOFTWARE\HostRename'   # must match $MarkerRegistryKey in Prepare-HostRename.ps1
 $StateKey   = 'HKLM:\SOFTWARE\HostRenameState'   # remembers original name and target name (idempotency for templates with {Name} + {Serial})
-
-try {
-    if (-not (Test-Path $LocalDir)) { New-Item -ItemType Directory -Path $LocalDir -Force | Out-Null }
-}
-catch {
-    # e.g. manual run without administrator rights: fall back to the temp folder
-    $LocalDir   = Join-Path $env:TEMP 'HostRename'
-    $LocalLog   = Join-Path $LocalDir 'rename-local.csv'
-    $PendingLog = Join-Path $LocalDir 'pending.csv'
-    New-Item -ItemType Directory -Path $LocalDir -Force | Out-Null
-}
+$centralLog = Resolve-CentralLogPath -Path $CentralLogPath -NoCentralLog:$NoCentralLog
+$CentralLogPath = $centralLog.Path   # '' = central log disabled (all functions below check this)
+$script:NoLocalLog = $false          # true only while the local folder must not be written to (Write-RenameLog then prints only)
 
 # ---- Device identity (stable keys for searching the log) --------------------
 $script:CurrentName = $env:COMPUTERNAME
@@ -270,7 +298,7 @@ function ConvertTo-CsvField {
 function Send-PendingLog {
     # Appends all lines not yet delivered to the central CSV.
     # Exclusive write access (FileShare.Read) + retry so that parallel devices do not overwrite each other.
-    # No-op if the central log is disabled (-CentralLogPath '').
+    # No-op if the central log is disabled (-NoCentralLog, see Resolve-CentralLogPath).
     if (-not $CentralLogPath) { return }
     if (-not (Test-Path $PendingLog)) { return }
     $lines = @(Get-Content -Path $PendingLog -Encoding UTF8 | Where-Object { $_ })
@@ -321,11 +349,13 @@ function Write-RenameLog {
               $script:Serial, $script:MachineGuid, $Message) |
             ForEach-Object { ConvertTo-CsvField ([string]$_) }) -join ';'
 
-    if (-not (Test-Path $LocalLog)) { Set-Content -Path $LocalLog -Value $CsvHeader -Encoding UTF8 }
-    Add-Content -Path $LocalLog -Value $row -Encoding UTF8
+    if (-not $script:NoLocalLog) {
+        if (-not (Test-Path $LocalLog)) { Set-Content -Path $LocalLog -Value $CsvHeader -Encoding UTF8 }
+        Add-Content -Path $LocalLog -Value $row -Encoding UTF8
+    }
     Write-Output ('{0} [{1}] {2}: {3}' -f $ts, $Level, $EventName, $Message)
 
-    if (-not $LocalOnly -and $CentralLogPath) {
+    if (-not $LocalOnly -and -not $script:NoLocalLog -and $CentralLogPath) {
         Add-Content -Path $PendingLog -Value $row -Encoding UTF8
         Send-PendingLog
     }
@@ -474,6 +504,31 @@ function Invoke-Cleanup {
 }
 
 # ---- Check central log ---------------------------------------------------------------
+function Resolve-HostAddress {
+    # Distinct addresses of a host in resolver order (throws if the name cannot be resolved).
+    param([Parameter(Mandatory)][string]$ComputerName)
+    $seen = @{}
+    foreach ($a in [System.Net.Dns]::GetHostAddresses($ComputerName)) {
+        $k = $a.ToString()
+        if (-not $seen.ContainsKey($k)) { $seen[$k] = $true; $a }
+    }
+}
+
+function Connect-TcpAddress {
+    # True if a TCP connection to the address succeeds within the timeout (socket with the address's own family).
+    param([Parameter(Mandatory)][System.Net.IPAddress]$Address, [int]$Port, [int]$TimeoutMs = 3000)
+    $tcp = $null
+    try {
+        $tcp = New-Object System.Net.Sockets.TcpClient -ArgumentList $Address.AddressFamily   # throws on a host without IPv6
+        $iar = $tcp.BeginConnect($Address, $Port, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
+        $tcp.EndConnect($iar)
+        return $true
+    }
+    catch { return $false }
+    finally { if ($tcp) { $tcp.Close() } }
+}
+
 function Test-CentralLog {
     # Checks in three stages whether the central log is reachable and writable for this account, without writing anything:
     #   1) name resolution of the server  2) TCP port 445 (SMB)  3) open the file for appending (share and NTFS permission)
@@ -483,17 +538,19 @@ function Test-CentralLog {
 
     if ($Path -match '^\\\\([^\\]+)\\') {
         $server = $Matches[1]
-        try { $null = [System.Net.Dns]::GetHostAddresses($server) }
+        try { $addrs = @(Resolve-HostAddress -ComputerName $server) }
         catch { $res.Stage = 'NameResolution'; $res.Error = "Server '$server' cannot be resolved ($($_.Exception.Message))"; return $res }
+        if (-not $addrs.Count) { $res.Stage = 'NameResolution'; $res.Error = "Server '$server' resolves to no address"; return $res }
 
-        $tcp = New-Object System.Net.Sockets.TcpClient
-        try {
-            $iar = $tcp.BeginConnect($server, 445, $null, $null)
-            if (-not $iar.AsyncWaitHandle.WaitOne(3000, $false)) { $res.Stage = 'SmbPort'; $res.Error = "Port 445 on '$server' is not responding (timeout after 3 s)"; return $res }
-            $tcp.EndConnect($iar)
+        # One socket per address with its own address family: the default TcpClient is IPv4 only in .NET Framework,
+        # which would report a false SmbPort failure over IPv6-only paths (DirectAccess). At most 3 addresses, 3 s each.
+        $fails = @()
+        $connected = $false
+        foreach ($addr in ($addrs | Select-Object -First 3)) {
+            if (Connect-TcpAddress -Address $addr -Port 445 -TimeoutMs 3000) { $connected = $true; break }
+            $fails += [string]$addr
         }
-        catch { $res.Stage = 'SmbPort'; $res.Error = "Port 445 on '$server' is unreachable ($($_.Exception.Message))"; return $res }
-        finally { $tcp.Close() }
+        if (-not $connected) { $res.Stage = 'SmbPort'; $res.Error = "Port 445 on '$server' is not responding (tried $($fails -join ', '); timeout 3 s each)"; return $res }
     }
 
     try {
@@ -690,9 +747,118 @@ function Save-RunState {
 
 function Exit-HostRename {
     # Single exit point: records the result (Save-RunState) and ends the script with the given exit code.
-    param([Parameter(Mandatory)][int]$Code)
-    Save-RunState -Code $Code
+    # -SkipState: write no reporting values (32-bit process on 64-bit Windows: they would land in WOW6432Node).
+    param([Parameter(Mandatory)][int]$Code, [switch]$SkipState)
+    if (-not $SkipState) { Save-RunState -Code $Code }
     exit $Code
+}
+
+# ---- Platform and local folder (ACMP mode) ----------------------------------------
+function Test-Wow64Process {
+    # True for a 32-bit process on 64-bit Windows (e.g. a 32-bit ACMP agent starting SysWOW64\powershell.exe).
+    # Registry writes to HKLM:\SOFTWARE would then be redirected to WOW6432Node.
+    [Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess
+}
+
+function Get-OwnerSid {
+    # Owner of a file or folder as a SID string (language-independent).
+    param([Parameter(Mandatory)][string]$Path)
+    (Get-Acl -LiteralPath $Path).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+}
+
+function Set-LocalDirAcl {
+    # Protected ACL: owner Administrators, inheritance removed, full control only for SYSTEM and Administrators.
+    # icacls with SID notation (language-independent, like the icacls actions in Prepare-HostRename.ps1).
+    # Any other explicit entry (SID other than SYSTEM/Administrators) is removed. Throws on an icacls error.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal helper; Initialize-LocalDir does not call it under -WhatIf.')]
+    param([Parameter(Mandatory)][string]$Path, [switch]$Container)
+    $inherit = if ($Container) { '(OI)(CI)' } else { '' }
+    & icacls.exe $Path /setowner '*S-1-5-32-544' /C /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "icacls /setowner on '$Path' failed (exit code $LASTEXITCODE)" }
+    & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-18:${inherit}F" "*S-1-5-32-544:${inherit}F" /C /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "icacls /inheritance:r /grant:r on '$Path' failed (exit code $LASTEXITCODE)" }
+    $foreign = @((Get-Acl -LiteralPath $Path).GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier]) |
+        ForEach-Object { $_.IdentityReference.Value } |
+        Where-Object { $_ -ne 'S-1-5-18' -and $_ -ne 'S-1-5-32-544' } | Select-Object -Unique)
+    foreach ($sid in $foreign) {
+        & icacls.exe $Path /remove "*$sid" /C /Q | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "icacls /remove *$sid on '$Path' failed (exit code $LASTEXITCODE)" }
+    }
+}
+
+function Initialize-LocalDir {
+    # Guards the default local folder of ACMP mode (<ProgramData>\HostRename): standard users may create folders and
+    # files in ProgramData, so the folder could have been prepared by a user (junction/symbolic link, own ACL) to make
+    # SYSTEM write to or delete other files. Before anything is written:
+    #   - an existing folder must not be a reparse point and must be owned by SYSTEM or Administrators;
+    #   - a missing folder is created (and must still be empty once it is locked);
+    #   - the folder gets a protected ACL (Set-LocalDirAcl), then every entry in it is checked the same way
+    #     (no reparse point, owner SYSTEM/Administrators) and gets the protected ACL too.
+    # Under -WhatIf nothing is created or changed (nothing is written then), the checks still run.
+    # Returns '' if the folder can be used, otherwise the reason. Never throws.
+    param([Parameter(Mandatory)][string]$Path)
+    $allowed = @('S-1-5-18', 'S-1-5-32-544')
+    $reparse = [System.IO.FileAttributes]::ReparsePoint
+    $created = $false
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) {
+            if ($WhatIfPreference) { return '' }
+            try { New-Item -ItemType Directory -Path $Path -ErrorAction Stop | Out-Null; $created = $true }
+            catch { if (-not (Test-Path -LiteralPath $Path)) { throw } }   # created in parallel: the checks below decide
+        }
+        $folder = Get-Item -LiteralPath $Path -Force
+        if ($folder.Attributes -band $reparse) { return "local folder '$Path' is a reparse point (junction or symbolic link)" }
+        if (-not $folder.PSIsContainer) { return "local folder '$Path' is not a folder" }
+        $owner = Get-OwnerSid -Path $Path
+        if ($allowed -notcontains $owner) { return "owner of local folder '$Path' is $owner (expected S-1-5-18 or S-1-5-32-544)" }
+        if (-not $WhatIfPreference) { Set-LocalDirAcl -Path $Path -Container }
+        # Entries are checked after the folder is locked, so no new ones can appear in between.
+        # A folder created by this run must still be empty: anything in it was placed there by someone else before the lock.
+        $items = @(Get-ChildItem -LiteralPath $Path -Force)
+        if ($created -and $items.Count) { return "local folder '$Path' was just created but already contains '$($items[0].Name)'" }
+        foreach ($item in $items) {
+            if ($item.Attributes -band $reparse) { return "'$($item.FullName)' in the local folder is a reparse point (junction or symbolic link)" }
+            $owner = Get-OwnerSid -Path $item.FullName
+            if ($allowed -notcontains $owner) { return "owner of '$($item.FullName)' in the local folder is $owner (expected S-1-5-18 or S-1-5-32-544)" }
+            if (-not $WhatIfPreference) { Set-LocalDirAcl -Path $item.FullName -Container:$item.PSIsContainer }
+        }
+        return ''
+    }
+    catch { return "local folder '$Path' could not be secured: $($_.Exception.Message)" }
+}
+
+# ---- Start: platform check and local folder ----------------------------------------
+if ($Deployment -eq 'Acmp' -and (Test-Wow64Process)) {
+    # Before anything is written: logs and reporting values would land in the wrong places (WOW6432Node).
+    $script:NoLocalLog = $true
+    Write-RenameLog -Level ERROR -EventName PLATFORM -Message 'HostRename runs in a 32-bit PowerShell on 64-bit Windows; registry values would be redirected to WOW6432Node. Start %SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe from the 32-bit ACMP agent. Nothing was changed.' -LocalOnly
+    Exit-HostRename -Code 1 -SkipState
+}
+
+if ($Deployment -eq 'Acmp' -and -not $explicitLocalDir) {
+    $localDirError = Initialize-LocalDir -Path $LocalDir
+    if ($localDirError) {
+        # Do not write to this folder at all; stdout (ACMP output) and the reporting values carry the error
+        $script:NoLocalLog = $true
+        Write-RenameLog -Level ERROR -EventName LOCAL_DIR -Message "$localDirError - the folder is not used; nothing was changed. Remove or fix it as administrator." -LocalOnly
+        Exit-HostRename -Code 1
+    }
+}
+else {
+    try {
+        if (-not (Test-Path $LocalDir)) { New-Item -ItemType Directory -Path $LocalDir -Force | Out-Null }
+    }
+    catch {
+        # e.g. manual run without administrator rights: fall back to the temp folder
+        $LocalDir   = Join-Path $env:TEMP 'HostRename'
+        $LocalLog   = Join-Path $LocalDir 'rename-local.csv'
+        $PendingLog = Join-Path $LocalDir 'pending.csv'
+        New-Item -ItemType Directory -Path $LocalDir -Force | Out-Null
+    }
+}
+
+if ($centralLog.Warning) {
+    Write-RenameLog -Level WARN -EventName LOG_CHECK -Message $centralLog.Warning -LocalOnly
 }
 
 # ---- Main logic ----------------------------------------------------------------
@@ -700,6 +866,11 @@ try {
     $active  = (Get-ItemProperty "$regCN\ActiveComputerName").ComputerName   # currently effective
     $pending = (Get-ItemProperty "$regCN\ComputerName").ComputerName         # effective after reboot
     $script:CurrentName = $active
+
+    # ACMP controls the reboot: report an ignored -Reboot on every run (also when nothing is to do or a reboot is pending)
+    if ($Reboot -and $Deployment -eq 'Acmp') {
+        Write-RenameLog -Level WARN -EventName REBOOT_IGNORED -Message 'Parameter -Reboot is ignored with -Deployment Acmp (ACMP controls the reboot); exit code 3010 signals that a reboot is required.' -LocalOnly
+    }
 
     # 0) Determine the name template: -NameTemplate takes precedence, otherwise "Prefix{Name}Suffix"
     $Template = if ($NameTemplate) { $NameTemplate } elseif ($Prefix -or $Suffix) { '{0}{{Name}}{1}' -f $Prefix, $Suffix } else { '' }
@@ -746,14 +917,11 @@ try {
     }
 
     Write-RenameLog -Level INFO -EventName START -Message "HostRename ${ScriptVersion}: deployment $Deployment, template '$Template', mode for names that are too long: $OnTooLong"
-    if ($Reboot -and $Deployment -eq 'Acmp') {
-        Write-RenameLog -Level WARN -EventName REBOOT_IGNORED -Message 'Parameter -Reboot is ignored with -Deployment Acmp (ACMP controls the reboot); exit code 3010 signals that a reboot is required.'
-    }
 
     # 1a) Check the central log. Diagnostics only: the rename also runs without a central log, the entries are then delivered later
     #     and the cleanup waits. The result is only written to the local log, because the central one may be unusable.
     $logCheck = if ($CentralLogPath) { Test-CentralLog } else { $null }
-    if (-not $CentralLogPath) { Write-RenameLog -Level INFO -EventName LOG_CHECK -Message 'Central log is disabled (-CentralLogPath is empty); only the local log is written.' -LocalOnly }
+    if (-not $CentralLogPath) { Write-RenameLog -Level INFO -EventName LOG_CHECK -Message 'Central log is disabled (-NoCentralLog or no usable -CentralLogPath); only the local log is written.' -LocalOnly }
     elseif ($logCheck.Ok) { Write-RenameLog -Level INFO -EventName LOG_CHECK -Message "Central log '$CentralLogPath' is reachable and writable." -LocalOnly }
     else              { Write-RenameLog -Level WARN -EventName LOG_CHECK -Message "Central log '$CentralLogPath' not usable (stage: $($logCheck.Stage)): $($logCheck.Error). Entries stay in pending.csv and will be delivered later." -LocalOnly }
 

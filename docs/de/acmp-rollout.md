@@ -72,7 +72,7 @@ Statische Container steuern, **wer** den Client-Command erhält. Dynamische Cont
 | `HR-AfterReboot` | dynamisch | `HR_TargetName` = aktueller Computername und `HR_Done = 0` |
 | `HR-Done` | dynamisch | `HR_Done = 1` |
 | `HR-Retry` | dynamisch | `HR_LastExitCode = 1` oder Gate 20/21/22 |
-| `HR-Permanent` | dynamisch | `HR_LastExitCode` in 2, 4, 5 (braucht manuelles Eingreifen) |
+| `HR-Permanent` | dynamisch | `HR_LastExitCode` in 2, 4, 5 (braucht manuelles Eingreifen; der Client-Command endet bis zur Freigabe des Geräts in Schritt 1 mit `phase=permanent`, siehe [acmp-anleitung.md](acmp-anleitung.md), Abschnitt 4) |
 | `HR-Stale` | dynamisch | `HR_LastRun` älter als N Tage und `HR_Done = 0` |
 
 ### 2.4 Zeitplan und Wiederholung
@@ -152,7 +152,7 @@ Von oben nach unten prüfen. Ein Lauf ist nur dann in Ordnung, wenn alle zutreff
 | nach dem Neustart | 3010 oder 0 | neu | – | neu | Gate 0 | Zertifikat (WLAN-Geräte), Cleanup |
 | fertig | 0 | neu (leer, wenn der Name schon zur Vorlage passte) | vorhanden (`ComputerName` = neu) | neu | Schritt 1 beendet den Lauf | keiner |
 | Wiederholung | 1 | evtl. | – | evtl. | Fehler im Job | automatisch beim nächsten Lauf; nach mehreren Fehlschlägen das Log prüfen |
-| dauerhaft | 2, 4 oder 5 | – | – | alt | Fehler im Job | manuelles Eingreifen (siehe [acmp-anleitung.md](acmp-anleitung.md), Abschnitt 5) |
+| dauerhaft | 2, 4 oder 5 | – | – | alt | Client-Command endet bei jedem Lauf in Schritt 1 (`phase=permanent`) | manuelles Eingreifen: Ursache beheben, dann das Gerät durch Löschen von `LastExitCode` freigeben (siehe [acmp-anleitung.md](acmp-anleitung.md), Abschnitt 4) |
 
 ### 4.3 Statusskript für den Client-Command „HostRename – Status“
 
@@ -236,12 +236,12 @@ Die Spalte „Ergebnis“ ausfüllen (OK oder Abweichung mit kurzer Notiz). Die 
 
 | ID | Situation | So erzeugen | Erwartetes Ergebnis | Prüfung | Ergebnis |
 | --- | --- | --- | --- | --- | --- |
-| AC-C1 | Keine Berechtigung | Testgerät in einer OU ohne Delegation | Exit 4 (`PERM_DENIED`), keine Umbenennung, Container `HR-Permanent`, keine endlose Wiederholung | L1–L3 | |
-| AC-C2 | Name zu lang | zu lange Testvorlage mit `-OnTooLong Skip` | Exit 2, keine Umbenennung, `HR-Permanent` | L1–L3 | |
+| AC-C1 | Keine Berechtigung | Testgerät in einer OU ohne Delegation | Exit 4 (`PERM_DENIED`), keine Umbenennung, Container `HR-Permanent`; Wiederholungen enden in Schritt 1 mit `phase=permanent` (kein Gate, kein Skript); nach Behebung der Delegation und Löschen von `LastExitCode` läuft der nächste Lauf weiter und benennt um | L1–L3 | |
+| AC-C2 | Name zu lang | zu lange Testvorlage mit `-OnTooLong Skip` | Exit 2, keine Umbenennung, `HR-Permanent`; Wiederholungen enden in Schritt 1 mit `phase=permanent`; nach der Freigabe (`LastExitCode` gelöscht) läuft der Lauf wieder weiter | L1–L3 | |
 | AC-C3 | Neustart verschoben | den Neustart-Dialog bis zur Frist verschieben | Neustart spätestens zur Frist; bis dahin liefern erneute Läufe 3010 (`PENDING_REBOOT`) | L1, L3 | |
 | AC-C4 | Kabel vor dem Neustart gezogen | nach 3010 das Kabel ziehen, WLAN verwenden | notieren: funktioniert WLAN bis zum Neustart noch (Testplan W1)? Nach dem Neustart wartet das Gerät an Gate 20, bis ein Kabel angeschlossen ist | L1, L3, L6 | |
 | AC-C5 | Gerät nach der Umbenennung offline | nach 3010 das Gerät einen Tag offline nehmen | der nächste Lauf macht mit der Phase nach dem Neustart weiter; nichts wird zweimal umbenannt | L1–L3 | |
-| AC-C6 | Zentrales Log nicht erreichbar (falls genutzt) | die Freigabe während des Cleanups sperren | Exit 0, Marker nicht gesetzt; `CLEANUP_DEFERRED` im lokalen Log und als `HR_LastEvent` (Cleanup-Ereignisse erscheinen nicht in der ACMP-Ausgabe); der nächste Lauf schließt das Cleanup ab | L2, L3, L5 | |
+| AC-C6 | Zentrales Log nicht erreichbar (falls genutzt) | die Freigabe während des Cleanups sperren | Exit 0, Marker nicht gesetzt; `CLEANUP_DEFERRED` im lokalen Log und als `HR_LastEvent` (die Cleanup-Ereignisse erscheinen auch in der ACMP-Ausgabe); der nächste Lauf schließt das Cleanup ab | L2, L3, L5 | |
 | AC-C7 | Zertifikat schlägt fehl | falscher Vorlagenname | Zertifikat Exit 1, kein Cleanup, `HR-Retry`; nach Korrektur des Namens schließt der nächste Lauf ab | L1–L3, L6 | |
 | AC-C8 | Geschützter Ordner | Standardbenutzer legt `C:\ProgramData\HostRename` vorab an (Testplan R14) | Exit 1, `[ERROR] LOCAL_DIR` in der ACMP-Ausgabe; nachdem ein Admin den Ordner gelöscht hat, funktioniert der nächste Lauf | L1, L3 | |
 | AC-C9 | Zwei Läufe gleichzeitig | Umbenennen zweimal kurz hintereinander starten (falls ACMP es erlaubt) | keine doppelte Umbenennung; der zweite Lauf liefert 3010 oder endet bei Schritt 1 | L1, L3 | |
@@ -282,7 +282,7 @@ Auf dem Gerät als Administrator: `Rename-Computer -NewName <OldName> -Restart` 
 | --- | --- | --- |
 | Gerät bleibt in `HR-Open` | Jobverlauf: Gate-Zeile | nie im LAN/DA (Gate 20/21/22); Client-Command nicht zugewiesen |
 | `HR_LastExitCode = 1` | ACMP-Ausgabe, lokales Log | DC nicht erreichbar, sicherer Kanal, `LOCAL_DIR`, `PLATFORM` (32-Bit) |
-| Exit 4 | lokales Log `PERM_CHECK` / `PERM_DENIED` | Delegation für die OU des Geräts fehlt |
+| Exit 4 | lokales Log `PERM_CHECK` / `PERM_DENIED` | Delegation für die OU des Geräts fehlt; nach der Behebung das Gerät freigeben: `Remove-ItemProperty -Path HKLM:\SOFTWARE\HostRenameState -Name LastExitCode` (sonst endet der Client-Command in Schritt 1 mit `phase=permanent`) |
 | Hängt in `HR-RebootPending` | Neustart-Dialog / Frist | Benutzer verschiebt, Neustart von ACMP nicht ausgelöst |
 | Hängt in `HR-AfterReboot` | Zertifikatszeile, lokales Log `CLEANUP_DEFERRED` | Zertifikatsschritt schlägt fehl, zentrales Log nicht erreichbar |
 | WLAN funktioniert nach dem Neustart nicht | Zertifikatspeicher, `HR_Cert` | Zertifikat noch nicht erneuert (Gerät braucht einmal Kabel oder DA) |

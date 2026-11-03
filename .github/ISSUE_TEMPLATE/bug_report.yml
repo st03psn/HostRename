@@ -1,0 +1,47 @@
+name: Bug report / Fehlerbericht
+description: Report a problem with HostRename / Ein Problem mit HostRename melden
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description / Beschreibung
+      description: What happened and what did you expect? / Was ist passiert, was hast du erwartet?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Schritte zur Reproduktion
+      placeholder: |
+        1. .\src\HostRename.ps1 -NewName ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Windows version / Windows-Version
+      placeholder: e.g. Windows 11 23H2, Windows Server 2022
+    validations:
+      required: true
+  - type: input
+    id: psversion
+    attributes:
+      label: PowerShell version ($PSVersionTable.PSVersion)
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment / Umgebung
+      options:
+        - Workgroup / Arbeitsgruppe
+        - Active Directory domain / AD-Domäne
+        - Entra ID (Azure AD) joined
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output / Fehlerausgabe
+      description: Please remove internal hostnames and credentials. / Bitte interne Hostnamen und Zugangsdaten entfernen.
+      render: text

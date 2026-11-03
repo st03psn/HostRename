@@ -12,18 +12,18 @@ HostRename benennt domänenverbundene Windows-Clients nach einer Namensvorlage u
 
 > **Teststand: In ACMP ist noch nichts gelaufen.** Die Skripte wurden nur in einer Simulation mit Mocks getestet (Linux, PowerShell 7). Ihre Tests sind die ersten echten. Die ACMP-Menü- und Befehlsnamen unten sind allgemein gehalten und mit „in ACMP prüfen“ markiert: Bitte die echten Namen notieren.
 
-## 2. Einzutragende Werte
+## 2. Werte, die du in deiner Umgebung ermittelst
 
-Der Eigentümer liefert diese Werte vor dem Test. In jedem Client-Command identisch verwenden.
+Diese Werte ermittelst du vor dem ersten Test selbst in deiner Umgebung. Niemand trägt sie vorab für dich ein. Halte sie in deinen eigenen Notizen fest, nicht im Repository, und verwende sie in jedem Client-Command identisch.
 
-| Wert | Platzhalter | Vom Eigentümer eingetragen |
+| Wert | Platzhalter | So findest du ihn |
 | --- | --- | --- |
-| Namensvorlage | `<NameTemplate>` (z. B. `DE{Serial}`) | |
-| Zentrales Log | ja / nein; wenn ja: `<UNC path>` (z. B. `\\<Server>\HostRename$\log\rename-log.csv`) | |
-| SSID(s) des Firmen-WLANs | `<CorporateSsid>` (durch Komma getrennt) | |
-| Name der Zertifikatvorlage (nur WLAN-Geräte; Vorlagenname, nicht Anzeigename) | `<CertificateTemplate>` | |
-| Test-OU | `<OU DN>` | |
-| Testgeräte | LAN: `<name>` · DirectAccess (optional): `<name>` · WLAN-Benutzer: `<name>` | |
+| Namensvorlage | `<NameTemplate>` | Bei der Stelle erfragen, die die Namenskonvention festlegt. Für den ersten Test geht eine gut erkennbare Testvorlage, z. B. `TST{Serial:-8}` (Präfix `TST` plus die letzten 8 Zeichen der Seriennummer). Wird die Vorlage später geändert, werden die Testgeräte erneut umbenannt; das ist unproblematisch. Syntax: README, Abschnitt „Namensvorlagen“ |
+| Zentrales Log | `-NoCentralLog` oder `-CentralLogPath <UNC-Pfad>` | Für den ersten Test `-NoCentralLog`: kein Share nötig, das lokale Log bleibt auf dem Gerät. Ein zentrales Log nur verwenden, wenn ein Share mit `Prepare-HostRename.ps1 -Component Share` eingerichtet wurde |
+| SSID(s) des Firmen-WLANs | `<CorporateSsid>` | Auf einem Gerät, das mit dem Firmen-WLAN verbunden ist: `netsh wlan show interfaces` (Zeile „SSID“) oder der Netzwerkname in der Windows-Netzwerkliste. Mehrere SSIDs durch Komma getrennt |
+| Name der Zertifikatvorlage (nur WLAN-Geräte) | `<CertificateTemplate>` | Der **Vorlagenname**, nicht der Anzeigename. Auf einem Gerät mit WLAN-Computerzertifikat: `certutil -store My`, beim Zertifikat für das WLAN nach „Vorlage=“/„Template=“ suchen; oder auf der CA: `certutil -CATemplates`. Im Zweifel den Zertifikatsschritt im ersten Test (T-F) weglassen |
+| Test-OU | `<OU DN>` | Die OU, in der die Testgeräte liegen: auf einem Testgerät `([adsisearcher]"(&(objectCategory=computer)(name=$env:COMPUTERNAME))").FindOne().Properties.distinguishedname`, ohne den Teil `CN=<Gerät>,`. Auf dieser OU muss die Delegation gesetzt sein (Abschnitt 3) |
+| Testgeräte | LAN · DirectAccess (optional) · WLAN-Benutzer | Eigene Geräte, die umbenannt werden dürfen; am besten eins je Weg |
 
 ## 3. Checkliste der Voraussetzungen
 

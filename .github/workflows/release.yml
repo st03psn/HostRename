@@ -1,0 +1,88 @@
+name: Release
+
+# Started manually (Actions > Release > Run workflow). Builds the release ZIP from the
+# given source ref (default: the commit the workflow runs on), creates the tag v<version>
+# on that commit and the GitHub release with the ZIP attached.
+# Per version, two files must exist in .github/release-notes/ on the branch the workflow runs on:
+#   v<version>.md     release notes
+#   v<version>.files  package contents: one path or glob per line, relative to the repo root
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without "v", e.g. 1.2.0 (must match $ScriptVersion in Invoke-HostRename.ps1 of the source ref)'
+        required: true
+      source_ref:
+        description: 'Commit SHA, branch or tag to package (empty = the commit this workflow runs on)'
+        required: false
+        default: ''
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout workflow branch (release notes and file lists)
+        uses: actions/checkout@v4
+        with:
+          path: meta
+
+      - name: Checkout source to package
+        uses: actions/checkout@v4
+        with:
+          path: src
+          ref: ${{ inputs.source_ref || github.sha }}
+
+      - name: Check version, release notes and file list
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid version: $VERSION"; exit 1; }
+          grep -q "^\$ScriptVersion = '$VERSION'" src/Invoke-HostRename.ps1 || { echo "\$ScriptVersion in Invoke-HostRename.ps1 of the source ref is not $VERSION"; exit 1; }
+          test -f "meta/.github/release-notes/v$VERSION.md"    || { echo "Missing .github/release-notes/v$VERSION.md"; exit 1; }
+          test -f "meta/.github/release-notes/v$VERSION.files" || { echo "Missing .github/release-notes/v$VERSION.files"; exit 1; }
+          if git -C meta ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then echo "Tag v$VERSION already exists"; exit 1; fi
+          echo "SOURCE_SHA=$(git -C src rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Build ZIP
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dir="HostRename-$VERSION"
+          mkdir -p "dist/$dir"
+          cd src
+          while IFS= read -r pattern || [ -n "$pattern" ]; do
+            pattern="${pattern%%#*}"; pattern="$(echo "$pattern" | xargs)"
+            [ -z "$pattern" ] && continue
+            matches=( $pattern )
+            [ ${#matches[@]} -gt 0 ] || { echo "No file matches '$pattern'"; exit 1; }
+            for m in "${matches[@]}"; do cp -r --parents "$m" "../dist/$dir/"; done
+          done < "../meta/.github/release-notes/v$VERSION.files"
+          cd ../dist
+          zip -r -X "$dir.zip" "$dir"
+          unzip -l "$dir.zip"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); else flags+=(--latest); fi
+          gh release create "v$VERSION" "dist/HostRename-$VERSION.zip" \
+            --target "$SOURCE_SHA" \
+            --title "HostRename $VERSION" \
+            --notes-file "meta/.github/release-notes/v$VERSION.md" \
+            "${flags[@]}"

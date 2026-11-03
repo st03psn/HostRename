@@ -93,7 +93,8 @@ The Dc and Client tests need `HostRename.Checks.psd1`, so run `.\Prepare-HostRen
 Release (example version `x.y.z`):
 1. Adjust the version in `.NOTES` of all scripts and test files (including `Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1` and the Network/Certificate/Acmp tests), `$ScriptVersion` in `Invoke-HostRename.ps1`, the comment `(Version x.y.z)` in `HostRename.Checks.beispiel.psd1`, the README header line (`Version x.y.z · As of`), the example "HostRename x.y.z: deployment Gpo, template …" in the README, the guide/test-plan header lines and the changes list. Do the same in `README.de.md` and the German docs.
 2. Run the Local tests (they check version equality).
-3. Commit, tag `vx.y.z`, attach the ZIP as a release asset.
+3. Add `.github/release-notes/vx.y.z.md` (release notes EN + DE) and `.github/release-notes/vx.y.z.files` (package contents, one path/glob per line; usually scripts, tests, sample psd1, READMEs, LICENSE, SECURITY.md, docs; never tools/, CLAUDE.md, CONTRIBUTING.md, .github/, site/), commit and merge to `main`, then run the workflow **Release** (Actions > Release > Run workflow: version `x.y.z`, optional `source_ref` to package an older commit, pre-release yes/no). It checks `$ScriptVersion` in the source, builds `HostRename-x.y.z.zip`, creates the tag `vx.y.z` on the source commit and the GitHub release with the ZIP (a full release becomes "Latest"). Released so far: v1.1.9 (GPO, pilot-confirmed, source commit 6605dc8, German) as Latest and v1.2.0 as pre-release.
+4. Marketing site: `site/` (EN `index.html`, DE `de/index.html`), published by the workflow **Pages** on every push to `main` that touches `site/` (one-time setting: Settings > Pages > Source "GitHub Actions"). Keep its facts and version in sync with the README.
 
 ## First steps
 

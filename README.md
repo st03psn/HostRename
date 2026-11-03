@@ -1,6 +1,6 @@
 # HostRename – Operations Guide
 
-[Deutsche Version](README.de.md)
+[Deutsche Version](README.de.md) · [Website](https://st03psn.github.io/HostRename/)
 
 Version 1.2.0 · As of: 3 November 2026
 

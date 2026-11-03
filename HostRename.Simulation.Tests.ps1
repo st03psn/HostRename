@@ -770,7 +770,11 @@ Describe 'S3 WLAN user: rename over LAN, certificate after the reboot' {
         $c.Output[-1] | Should -Match '^RESULT=RENEWED EXIT=0 TEMPLATE=SimWlanMachine DNS=desim4711ab.sim.invalid THUMBPRINT=\w+ NOTAFTER=\S+ REMOVED=1 '
         $global:HRSim.CertRemovals | Should -Be @($script:OldThumb)
         $global:HRSim.Certs.Count | Should -Be 1
-        $global:HRSim.Certs[0].GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::DnsName, $false) | Should -Be 'desim4711ab.sim.invalid'
+        # Check the SAN extension, not GetNameInfo(DnsName): under .NET Framework (Windows PowerShell 5.1)
+        # GetNameInfo returns the subject CN instead of the first SAN dNSName.
+        $san = $global:HRSim.Certs[0].Extensions | Where-Object { $_.Oid.Value -eq '2.5.29.17' }
+        $san | Should -Not -BeNullOrEmpty
+        $san.Format($false) | Should -Match ([regex]::Escape('desim4711ab.sim.invalid'))
         $run.Steps['Cleanup'].ExitCode | Should -Be 0
         $run.Outcome | Should -Be 'Done'
         (Get-SimMarker).ComputerName | Should -Be 'DESIM4711AB'

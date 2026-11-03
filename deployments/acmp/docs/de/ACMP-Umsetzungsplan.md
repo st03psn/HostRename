@@ -89,7 +89,7 @@ Ablauf in einem Client Command (Bausteine aus dem Editor: Dateien/File Repositor
    - 2, 4, 5: dauerhaftes Problem (Name zu lang, keine Rechte, keine Seriennummer), nicht wiederholen, in den Bericht.
 6. Nach dem Neustart (nächster Lauf, wieder über das Gate): Zertifikat erneuern (nur für WLAN-Geräte), dann `Invoke-HostRename.ps1 -Cleanup` (ACMP-Modus), Status melden.
 
-Die Exit-Codes der Skripte sind 0 bis 5, 20 bis 22 und 3010. ACMP verwendet eigene Codes ab 100 und ab 1001; alle Skriptcodes außer 3010 bleiben darunter. 3010 überschneidet sich zahlenmäßig mit dem Bereich von ACMP: in ACMP prüfen, wie es behandelt wird (Gerätetest A1).
+Die Exit-Codes der Skripte sind 0, 1, 2, 4, 5, 20 bis 22 und 3010 (3 wird nicht verwendet). ACMP verwendet eigene Codes ab 100 und ab 1001; alle Skriptcodes außer 3010 bleiben darunter. 3010 überschneidet sich zahlenmäßig mit dem Bereich von ACMP: in ACMP prüfen, wie es behandelt wird (Gerätetest A1).
 
 **Neustart-Regeln (zu entscheiden):** Verschieben nur begrenzt (z. B. bis Arbeitsende, höchstens X Stunden), danach Neustart mit Vorwarnung. Begründung: Zwischenzustand alter/neuer Name, bei DA Risiko für den Tunnel. Prüfen, ob der vorhandene ACMP-Neustart-Dialog (Windows Update Management) dafür nutzbar ist.
 

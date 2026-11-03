@@ -8,7 +8,7 @@ Use GitHub's private reporting instead: **Security → Report a vulnerability** 
 
 **Do not include environment data** in a report (or in any issue or pull request): no domain names, OUs, server or computer names, IP addresses, user names or unredacted logs. Replace them with placeholders such as `<domain>`, `<OU>` or `<server>`.
 
-Only the latest release receives security fixes.
+Security fixes are made only on the current state of `main` (today version 1.2.0) and published with the next release; older releases (including 1.1.9) receive no fixes.
 
 ### Security design in brief
 
@@ -24,7 +24,7 @@ Stattdessen die private Meldefunktion von GitHub nutzen: **Security → Report a
 
 **Keine Umgebungsdaten angeben** – weder in einer Meldung noch in einem Issue oder Pull Request: keine Domänennamen, OUs, Server- oder Computernamen, IP-Adressen, Benutzernamen oder ungeschwärzte Logs. Stattdessen Platzhalter wie `<domain>`, `<OU>` oder `<server>` verwenden.
 
-Sicherheitskorrekturen gibt es nur für die jeweils neueste Version.
+Sicherheitskorrekturen gibt es nur für den aktuellen Stand auf `main` (derzeit Version 1.2.0); sie erscheinen mit dem nächsten Release. Ältere Releases (auch 1.1.9) erhalten keine Korrekturen.
 
 ### Sicherheitskonzept in Kürze
 

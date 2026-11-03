@@ -238,7 +238,7 @@ Only on devices that use the EAP-TLS WLAN. Whether this step is needed at all is
 | 22 | `Test-DeploymentNetwork.ps1` | path not allowed / unknown | silent, retry later |
 | 100 and above, 1001 and above | ACMP itself | ACMP's own codes | how ACMP maps them: verify in ACMP |
 
-The script codes are 0 to 5, 20 to 22 and 3010. All except 3010 are below ACMP's own ranges; **3010 lies numerically in ACMP's range (1001 and above)**. Verify in ACMP how 3010 from a script is treated: passed through unchanged, usable in a condition, or interpreted as an ACMP code (device test A1).
+The script codes are 0, 1, 2, 4, 5, 20 to 22 and 3010 (3 is not used). All except 3010 are below ACMP's own ranges; **3010 lies numerically in ACMP's range (1001 and above)**. Verify in ACMP how 3010 from a script is treated: passed through unchanged, usable in a condition, or interpreted as an ACMP code (device test A1).
 
 Under `LOCAL_DIR` and `PLATFORM` (see above) exit code 1 has no entry in the local log; the reason is only on stdout (ACMP output).
 

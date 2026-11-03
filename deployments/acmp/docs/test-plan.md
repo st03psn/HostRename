@@ -99,6 +99,26 @@ Goal: clarify whether the rename breaks EAP-TLS WLAN (strong certificate mapping
 | A7 | corporate WLAN only | run the Client Command | gate exit 20, dialog shown, no rename | |
 | A8 | reboot dialog | decide the postponement limit | record the reboot deadline (open decision) | |
 
+## T3-W: ACMP wrapper (`Invoke-AcmpHostRename.ps1`)
+
+The wrapper runs the whole flow in one call (see the ACMP guide, "Recommended: the wrapper"). Run it from the extracted ACMP package (all scripts in one folder), as SYSTEM in the 64-bit PowerShell, e.g. `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-AcmpHostRename.ps1 -NameTemplate "<rule>" -NoCentralLog`. Check the last output line `HOSTRENAME PHASE=... EXIT=... STEP=...` and the exit code (`echo $LASTEXITCODE`) in every case. Devices that already ran T3-B must be reset first (rename back, remove both registry keys, see the README "Rollback").
+
+| ID | Precondition | Steps | Expected result | Result |
+| --- | --- | --- | --- | --- |
+| WR1 | Cable, delegation set, test device | wrapper with `-WhatIf` | exit 0, `PHASE=DryRun`; `WHATIF` with the target name; nothing written (no `HostRenameState` values, no local log) | |
+| WR2 | WR1 passed | wrapper without `-WhatIf` | exit 3010, `PHASE=RebootRequired STEP=Rename`; `TargetName` set; no reboot started by the script | |
+| WR3 | after WR2, before the reboot | run again | exit 3010 again (rename pending), no second rename | |
+| WR4 | after WR2, reboot, cable | run again | exit 0, `PHASE=Done STEP=Cleanup`; marker `HKLM\SOFTWARE\HostRename` exists; script files still present | |
+| WR5 | WR4 done | run again | exit 0 immediately, `PHASE=Done STEP=StateCheck`; no gate, no rename (lines `HOSTRENAME STEP=... RUN=...` missing) | |
+| WR6 | DirectAccess, no cable, fresh test device | WR2, reboot over DA, WR4 | as WR2/WR4; gate line shows `RESULT=DIRECTACCESS` | |
+| WR7 | WLAN user, fresh test device, cable | WR2, reboot, then wrapper with `-CertificateTemplate <Template> -RemoveOldCertificates` | after the reboot: certificate `RESULT=RENEWED`, then `PHASE=Done`; afterwards WLAN works without cable (as C7) | |
+| WR8 | Corporate WLAN only | wrapper | exit 20, `PHASE=Gate`; nothing renamed | |
+| WR9 | Home network without DA | wrapper | exit 21, `PHASE=Gate`; nothing renamed | |
+| WR10 | Test device in an OU without delegation | wrapper, then run again | first run exit 4; second run exit 4 immediately with `PHASE=Permanent STEP=StateCheck`; after `Remove-ItemProperty -Path HKLM:\SOFTWARE\HostRenameState -Name LastExitCode` and setting the delegation, the next run renames (exit 3010) | |
+| WR11 | 64-bit Windows | wrapper in the 32-bit PowerShell (`%SystemRoot%\SysWOW64\WindowsPowerShell\v1.0\powershell.exe`) | exit 1, `[ERROR] PLATFORM`; nothing written | |
+| WR12 | any | wrapper without `-NoCentralLog` and without `-CentralLogPath` | exit 1, `PHASE=Error STEP=Parameters`; nothing written | |
+| WR13 | Client Command with the wrapper (guide, recommended variant) | run via ACMP on a LAN device and on a WLAN-only device | 3010 triggers the reboot dialog, 20 the cable dialog; every other code ends the Client Command; the summary line is visible in the job output (complements A1–A6) | |
+
 ## T3-E: GPO regression (1.2.0 client script in GPO mode)
 
 The GPO path is unchanged by design, but the 1.2.0 client script has not run in GPO mode on a device yet. Use a pilot device (not an ACMP device).

@@ -147,6 +147,11 @@ jobs:
           if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
           if [ "$DRAFT" = "true" ]; then flags+=(--draft)
           elif [ "$PRERELEASE" != "true" ]; then flags+=(--latest); fi
+          # A draft of this version created by an earlier run is replaced (drafts have no tag yet).
+          if [ "$(gh release view "v$VERSION" --json isDraft --jq .isDraft 2>/dev/null || true)" = "true" ]; then
+            echo "Replacing the existing draft of v$VERSION"
+            gh release delete "v$VERSION" --yes
+          fi
           mapfile -t zips < dist/zips.txt
           [ ${#zips[@]} -gt 0 ] || { echo "No ZIP was built"; exit 1; }
           # With an existing tag, --target is not passed (the tag defines the commit).

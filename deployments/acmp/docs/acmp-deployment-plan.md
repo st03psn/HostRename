@@ -89,7 +89,7 @@ Flow in one Client Command (building blocks from the editor: files/file reposito
    - 2, 4, 5: permanent problem (name too long, no permissions, no serial number), do not retry, into the report.
 6. After the reboot (next run, again through the gate): renew the certificate (WLAN devices only), then `Invoke-HostRename.ps1 -Cleanup` (ACMP mode), report status.
 
-Script exit codes are 0 to 5, 20 to 22 and 3010. ACMP uses its own codes from 100 and from 1001; all script codes except 3010 stay below that. 3010 overlaps numerically with ACMP's range: verify in ACMP how it is treated (device test A1).
+Script exit codes are 0, 1, 2, 4, 5, 20 to 22 and 3010 (3 is not used). ACMP uses its own codes from 100 and from 1001; all script codes except 3010 stay below that. 3010 overlaps numerically with ACMP's range: verify in ACMP how it is treated (device test A1).
 
 **Reboot rules (open):** postpone only to a limited extent (e.g. until end of work, at most X hours), then reboot with advance warning. Reason: intermediate state of old/new name, risk to the tunnel with DA. Check whether the existing ACMP reboot dialog (Windows Update Management) can be used for this.
 

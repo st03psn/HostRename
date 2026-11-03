@@ -177,7 +177,9 @@
     A 32-bit ACMP agent starts %SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe instead.
 
 .OUTPUTS
-    No pipeline output. The exit code describes the result:
+    One text line per log event on the output stream ("<timestamp> [<level>] <event>: <message>"),
+    for the console or the job output of a deployment tool; not meant for further processing.
+    The exit code describes the result:
       0       nothing to do (name already matches the template) or -WhatIf
       3010    renamed or rename pending, reboot required
       1       error (details in the log; with LOCAL_DIR or PLATFORM only on stdout)

@@ -238,7 +238,7 @@ Nur auf Geräten, die das EAP-TLS-WLAN nutzen. Ob dieser Schritt überhaupt nöt
 | 22 | `Test-DeploymentNetwork.ps1` | Weg nicht erlaubt / unbekannt | still, später erneut |
 | ab 100, ab 1001 | ACMP selbst | eigene Codes von ACMP | wie ACMP sie abbildet: in ACMP prüfen |
 
-Die Skriptcodes sind 0 bis 5, 20 bis 22 und 3010. Alle außer 3010 liegen unter den eigenen Bereichen von ACMP; **3010 liegt zahlenmäßig im Bereich von ACMP (ab 1001)**. In ACMP prüfen, wie 3010 aus einem Skript behandelt wird: unverändert durchgereicht, in einer Bedingung nutzbar oder als ACMP-Code gedeutet (Gerätetest A1).
+Die Skriptcodes sind 0, 1, 2, 4, 5, 20 bis 22 und 3010 (3 wird nicht verwendet). Alle außer 3010 liegen unter den eigenen Bereichen von ACMP; **3010 liegt zahlenmäßig im Bereich von ACMP (ab 1001)**. In ACMP prüfen, wie 3010 aus einem Skript behandelt wird: unverändert durchgereicht, in einer Bedingung nutzbar oder als ACMP-Code gedeutet (Gerätetest A1).
 
 Bei `LOCAL_DIR` und `PLATFORM` (siehe oben) hat Exit-Code 1 keinen Eintrag im lokalen Log; der Grund steht nur auf stdout (ACMP-Ausgabe).
 

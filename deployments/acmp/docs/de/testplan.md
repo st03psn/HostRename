@@ -99,6 +99,26 @@ Ziel: klären, ob die Umbenennung das EAP-TLS-WLAN bricht (starke Zertifikatszuo
 | A7 | nur Firmen-WLAN | Client-Command ausführen | Gate Exit 20, Dialog gezeigt, keine Umbenennung | |
 | A8 | Neustart-Dialog | Verschiebe-Grenze festlegen | Neustart-Frist festhalten (offene Entscheidung) | |
 
+## T3-W: ACMP-Wrapper (`Invoke-AcmpHostRename.ps1`)
+
+Der Wrapper erledigt den ganzen Ablauf in einem Aufruf (siehe ACMP-Anleitung, „Empfohlen: der Wrapper“). Aus dem entpackten ACMP-Paket starten (alle Skripte in einem Ordner), als SYSTEM in der 64-Bit-PowerShell, z. B. `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-AcmpHostRename.ps1 -NameTemplate "<Regel>" -NoCentralLog`. In jedem Fall die letzte Ausgabezeile `HOSTRENAME PHASE=... EXIT=... STEP=...` und den Exit-Code (`echo $LASTEXITCODE`) prüfen. Geräte, auf denen schon T3-B lief, vorher zurücksetzen (zurückbenennen, beide Registry-Schlüssel entfernen, siehe README „Rückbau“).
+
+| ID | Voraussetzung | Schritte | Erwartetes Ergebnis | Ergebnis |
+| --- | --- | --- | --- | --- |
+| WR1 | Kabel, Delegation gesetzt, Testgerät | Wrapper mit `-WhatIf` | Exit 0, `PHASE=DryRun`; `WHATIF` mit dem Zielnamen; nichts geschrieben (keine Werte in `HostRenameState`, kein lokales Log) | |
+| WR2 | WR1 bestanden | Wrapper ohne `-WhatIf` | Exit 3010, `PHASE=RebootRequired STEP=Rename`; `TargetName` gesetzt; kein Neustart durch das Skript | |
+| WR3 | nach WR2, vor dem Neustart | erneut ausführen | wieder Exit 3010 (Umbenennung ausstehend), keine zweite Umbenennung | |
+| WR4 | nach WR2, Neustart, Kabel | erneut ausführen | Exit 0, `PHASE=Done STEP=Cleanup`; Marker `HKLM\SOFTWARE\HostRename` vorhanden; Skriptdateien bleiben | |
+| WR5 | WR4 erledigt | erneut ausführen | sofort Exit 0, `PHASE=Done STEP=StateCheck`; kein Gate, keine Umbenennung (keine Zeilen `HOSTRENAME STEP=... RUN=...`) | |
+| WR6 | DirectAccess, kein Kabel, frisches Testgerät | WR2, Neustart über DA, WR4 | wie WR2/WR4; Gate-Zeile zeigt `RESULT=DIRECTACCESS` | |
+| WR7 | WLAN-Nutzer, frisches Testgerät, Kabel | WR2, Neustart, dann Wrapper mit `-CertificateTemplate <Vorlage> -RemoveOldCertificates` | nach dem Neustart: Zertifikat `RESULT=RENEWED`, dann `PHASE=Done`; danach funktioniert das WLAN ohne Kabel (wie C7) | |
+| WR8 | nur Firmen-WLAN | Wrapper | Exit 20, `PHASE=Gate`; nichts umbenannt | |
+| WR9 | Heimnetz ohne DA | Wrapper | Exit 21, `PHASE=Gate`; nichts umbenannt | |
+| WR10 | Testgerät in einer OU ohne Delegation | Wrapper, dann erneut | erster Lauf Exit 4; zweiter Lauf sofort Exit 4 mit `PHASE=Permanent STEP=StateCheck`; nach `Remove-ItemProperty -Path HKLM:\SOFTWARE\HostRenameState -Name LastExitCode` und gesetzter Delegation benennt der nächste Lauf um (Exit 3010) | |
+| WR11 | 64-Bit-Windows | Wrapper in der 32-Bit-PowerShell (`%SystemRoot%\SysWOW64\WindowsPowerShell\v1.0\powershell.exe`) | Exit 1, `[ERROR] PLATFORM`; nichts geschrieben | |
+| WR12 | beliebig | Wrapper ohne `-NoCentralLog` und ohne `-CentralLogPath` | Exit 1, `PHASE=Error STEP=Parameters`; nichts geschrieben | |
+| WR13 | Client-Command mit dem Wrapper (Anleitung, empfohlene Variante) | über ACMP auf einem LAN-Gerät und einem Gerät nur im WLAN ausführen | 3010 löst den Neustart-Dialog aus, 20 den Kabel-Dialog; jeder andere Code beendet den Client-Command; die Zusammenfassungszeile steht in der Job-Ausgabe (ergänzt A1–A6) | |
+
 ## T3-E: GPO-Regression (Client-Skript 1.2.0 im GPO-Modus)
 
 Der GPO-Weg ist konstruktionsbedingt unverändert, aber das Client-Skript 1.2.0 ist im GPO-Modus noch nicht auf einem Gerät gelaufen. Ein Pilotgerät verwenden (kein ACMP-Gerät).

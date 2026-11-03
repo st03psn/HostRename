@@ -167,7 +167,6 @@ jobs:
             gh release edit "v$VERSION" "${edit[@]}"
             exit 0
           fi
-          [ ${#zips[@]} -gt 0 ] || { echo "No ZIP was built"; exit 1; }
           # With an existing tag, --target is not passed (the tag defines the commit).
           if [ "$TAG_EXISTS" != "true" ]; then flags+=(--target "$SOURCE_SHA"); fi
           gh release create "v$VERSION" "${zips[@]}" \

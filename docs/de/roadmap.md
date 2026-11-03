@@ -66,11 +66,17 @@ Ergebnisse aus T3, die Änderungen erfordern (z. B. andere Exit-Codes oder eine 
 | 10 | erledigt | Version 1.2.0, CI, Vorlagen |
 | 11 | erledigt | Unabhängiges Review. Behoben: unsicheres Abschalten des zentralen Logs, von Benutzern beschreibbarer ACMP-Log-Ordner (jetzt abgesichert), Erkennung eines 32-Bit-Prozesses, Umgang mit IPv6-Adressen, Fehler in der Doku |
 | 12 | erledigt | PR nach `main` |
+| 13 | erledigt (nach dem ursprünglichen Plan ergänzt) | ACMP-Rollout und Prüfung eines Laufs (`deployments/acmp/docs/de/acmp-rollout.md`, EN + DE) |
+| 14 | erledigt (ergänzt) | End-to-End-Simulation des ACMP-Ablaufs (`HostRename.Simulation.Tests.ps1`, Fälle S1–S12 und W1–W9) |
+| 15 | erledigt (ergänzt) | ACMP-Wrapper `Invoke-AcmpHostRename.ps1` und Starterkit für einen ersten ACMP-Tester (EN + DE); Cleanup-Ereignisse auf stdout; dauerhafte Fehler (2, 4, 5) stoppen den Client-Command bis zur Freigabe |
+| 16 | erledigt (ergänzt) | Repository neu gegliedert: `tests/`, `components/`, `deployments/acmp/`; je Verteilverfahren ein Release-Paket (GPO, flaches ACMP-Paket) |
+| 17 | erledigt (ergänzt) | Release-Workflow und Release Notes. Veröffentlicht: v1.1.9 (aktuelles Voll-Release, GPO-Lösung aus Commit `6605dc8`, deutsch) und v1.2.0 (Pre-Release, Pakete `gpo` und `acmp`) |
+| 18 | erledigt (ergänzt) | Website online unter https://st03psn.github.io/HostRename/ (EN + DE), gebaut aus `site/` |
 
 Teststand der automatischen Phasen:
 
-- **T1 (Linux, PowerShell 7, Pester 5 und 6):** Local 49 bestanden, 20 fehlgeschlagen, 5 übersprungen. Die Fehler sind reine Windows-Tests, die T2 abdeckt. Network 89 bestanden, 1 übersprungen. Certificate 69 bestanden. Acmp 83 bestanden. Simulation 39 bestanden.
-- **T2 (GitHub Actions, Windows PowerShell 5.1 und 7):** grün, einschließlich der reinen Windows-Tests aus Local. Die Simulation steht in der CI-Liste; ihr erster CI-Lauf steht noch aus.
+- **T1 (Linux, PowerShell 7, Pester 5.9; nach der Neugliederung):** Local 51 bestanden, 20 fehlgeschlagen, 5 übersprungen. Die Fehler sind reine Windows-Tests, die T2 abdeckt. Network 89 bestanden, 1 übersprungen. Certificate 69 bestanden. Acmp 83 bestanden. Simulation 70 bestanden.
+- **T2 (GitHub Actions, Windows PowerShell 5.1 und 7, Pester 6):** grün auf `main`, einschließlich der reinen Windows-Tests aus Local und der Simulation.
 - **Simulation (`HostRename.Simulation.Tests.ps1`, Teil von T1 und T2):** führt die echten Skripte und die dokumentierten Snippets für Zustandsprüfung und Status so verkettet aus wie den ACMP-Client-Command, über alle Phasen (LAN, DirectAccess, WLAN mit Zertifikatserneuerung, Warten am Gate, fehlende Delegierung, Namenskollision, unbrauchbare Seriennummer, Name passt schon, 32-Bit-Prozess, vorbereiteter Log-Ordner, GPO-Regression). Die Umgebung ist simuliert (Registry im Speicher; CIM, AD, Netzwerk, Zertifikatsspeicher und CA gemockt); das zentrale Log wird nicht simuliert. Sie zeigt, dass die Skripte und der dokumentierte Ablauf zusammenpassen; die Gerätetests in T3 ersetzt sie nicht.
 
-**Als Nächstes: T3, Gerätetests durch den Inhaber** nach [testplan.md](../../deployments/acmp/docs/de/testplan.md). Nichts aus 1.2.0 ist bisher auf einem echten Domänen-Client, über DirectAccess, mit WLAN/AD CS oder in ACMP gelaufen.
+**Als Nächstes: T3, Gerätetests durch den Inhaber** (die Gerätetests entscheiden, ob v1.2.0 ein Voll-Release werden kann) nach [testplan.md](../../deployments/acmp/docs/de/testplan.md). Nichts aus 1.2.0 ist bisher auf einem echten Domänen-Client, über DirectAccess, mit WLAN/AD CS oder in ACMP gelaufen.

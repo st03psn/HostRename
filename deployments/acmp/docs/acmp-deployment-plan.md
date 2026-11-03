@@ -2,7 +2,7 @@
 
 [Deutsche Version](de/ACMP-Umsetzungsplan.md)
 
-As of: 3 November 2026 · Status: decisions taken, implementation in progress (version 1.2.0)
+As of: 3 November 2026 · Status: decisions taken, implemented in version 1.2.0 (pre-release); device tests open
 
 Step-by-step build guide: [acmp-guide.md](acmp-guide.md) · Device test plan: [test-plan.md](test-plan.md)
 
@@ -57,7 +57,7 @@ The gate does not belong in the client script but stays standalone: this way it 
 ### 2. Client script in ACMP mode (`Invoke-HostRename.ps1`, small change)
 
 The logic stays, as do the exit codes (0, 3010, 1, 2, 4, 5). To adapt:
-- With `-Cleanup`, the script must not delete its own file if it does not run from `$LocalFolder` (under ACMP it lives in ACMP's storage). Proposal: switch `-KeepScript` or detection via the path. The cleanup removes the task only if it exists anyway.
+- With `-Cleanup`, the script must not delete its own file if it does not run from `$LocalFolder` (under ACMP it lives in ACMP's storage). Proposal: switch `-KeepScript` or detection via the path. The cleanup removes the task only if it exists anyway. (Implemented as `-Deployment Acmp`: the cleanup never deletes the script file or its folder.)
 - No `-Reboot`: ACMP controls the reboot.
 - Local logs via `-LocalDir` in a fixed location (in ACMP mode `C:\ProgramData\HostRename`; implemented as a protected folder: owner and reparse-point check, ACL only SYSTEM and Administrators, because standard users can create folders in ProgramData).
 - 64-bit PowerShell only (implemented: a 32-bit process on 64-bit Windows ends with exit 1 before writing anything; a 32-bit agent calls `%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe`).
@@ -76,7 +76,7 @@ Whether the step is needed is clarified in the test phases; the template name is
 
 ### 4. ACMP Client Command "HostRename"
 
-Flow in one Client Command (building blocks from the editor: files/file repository, custom scripts, conditions, flow control, dialogs):
+Flow in one Client Command (building blocks from the editor: files/file repository, custom scripts, conditions, flow control, dialogs). Implemented in 1.2.0 as the wrapper `Invoke-AcmpHostRename.ps1`, which runs this flow in one script run per ACMP invocation (see [acmp-guide.md](acmp-guide.md)):
 
 1. Transfer the scripts from the file repository to the client.
 2. Read the state: if the marker key `HKLM\SOFTWARE\HostRename` exists, the device is done and the run ends. `TargetName` in `HKLM\SOFTWARE\HostRenameState` shows that the rename has happened. Never use the mere existence of `HostRenameState` as the criterion: since 1.2.0 it exists after every run because of the reporting values.

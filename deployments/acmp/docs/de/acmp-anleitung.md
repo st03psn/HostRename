@@ -4,7 +4,7 @@
 
 Stand: 3. November 2026 · Version 1.2.0
 
-> **Teststand:** Alles hier Beschriebene ist neu in 1.2.0. Die Skripte wurden nur mit Mocks getestet (Linux, PowerShell 7). Auf echten Windows-Geräten oder in ACMP ist noch nichts bestätigt. Welche Editor-Elemente ACMP bietet und wie sie heißen, ist hier **nicht bekannt**: Diese Stellen sind mit „in ACMP prüfen“ markiert. Der vorgeschlagene Ablauf ist ein Ausgangspunkt, der in den Gerätetests ([testplan.md](testplan.md)) angepasst wird.
+> **Teststand:** Alles hier Beschriebene ist neu in 1.2.0. Die Skripte wurden nur mit Mocks, in einer End-to-End-Simulation und in der CI getestet (Windows PowerShell 5.1 und PowerShell 7, ohne AD und ohne ACMP). Auf echten Windows-Geräten oder in ACMP ist noch nichts bestätigt. Welche Editor-Elemente ACMP bietet und wie sie heißen, ist hier **nicht bekannt**: Diese Stellen sind mit „in ACMP prüfen“ markiert. Der vorgeschlagene Ablauf ist ein Ausgangspunkt, der in den Gerätetests ([testplan.md](testplan.md)) angepasst wird.
 
 GPO und ACMP sind **alternative** Verteilwege. Niemals beide auf demselben Gerät: Die HostRename-GPO nicht mit Geräten verknüpfen, die den Client-Command erhalten.
 

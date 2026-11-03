@@ -268,7 +268,7 @@ Die Spalte „Ergebnis“ ausfüllen (OK oder Abweichung mit kurzer Notiz). Die 
 - sich ein Gerät nach dem Neustart nicht an der Domäne anmelden kann (sicherer Kanal defekt) oder DirectAccess dauerhaft verliert;
 - WLAN-Benutzer ohne Kabel in großem Umfang abgeschnitten werden, obwohl die Zertifikatserneuerung im Ablauf ist;
 - ACMP Duplikate erzeugt oder nach der Umbenennung Zuordnungen (Lizenzen, Inventar) verliert;
-- ein anderer Skript-Exit-Code als 0, 1, 2, 3, 4, 5, 20–22 oder 3010 auftritt.
+- ein anderer Skript-Exit-Code als 0, 1, 2, 4, 5, 20–22 oder 3010 auftritt.
 
 Zum Stoppen **HostRename – Umbenennen** deaktivieren oder die Zuweisung entfernen. Bereits umbenannte Geräte bleiben umbenannt. Geräte, die umbenannt, aber noch nicht neu gestartet sind, behalten diesen Zustand: entscheiden, ob sie neu gestartet oder zurückbenannt werden.
 

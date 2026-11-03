@@ -4,7 +4,7 @@
 
 Stand: 3. November 2026
 
-Alles Neue in 1.2.0 (ACMP-Modus, Netzwerk-Gate, Zertifikatserneuerung, optionales zentrales Log, Berichtswerte) ist bisher nur mit Mocks unter Linux getestet. Dieser Plan listet die Tests auf echten Geräten. Die Ergebnisse fließen in Code und Dokumentation zurück (Exit-Codes, Erkennung, Neustart-Frist, Ablauf).
+Alles Neue in 1.2.0 (ACMP-Modus, ACMP-Wrapper, Netzwerk-Gate, Zertifikatserneuerung, optionales zentrales Log, Berichtswerte) ist bisher nur mit Mocks, in einer End-to-End-Simulation und in der CI getestet (Windows PowerShell 5.1 und PowerShell 7, ohne AD und ohne ACMP). Dieser Plan listet die Tests auf echten Geräten. Die Ergebnisse fließen in Code und Dokumentation zurück (Exit-Codes, Erkennung, Neustart-Frist, Ablauf).
 
 ## Regeln
 
@@ -110,7 +110,7 @@ Der GPO-Weg ist konstruktionsbedingt unverändert, aber das Client-Skript 1.2.0 
 | P3 | P2 | Neustart; `HostRenameState` prüfen | Berichtswerte vorhanden, `Deployment=Gpo` | |
 | P4 | P3 | Task läuft nach Boot + 5 min mit `-Cleanup` | Marker gesetzt, Task, Skript und lokale Logs entfernt; `CLEANUP_DONE` im zentralen Log | |
 | P5 | P4 | `gpupdate /force` | GPO legt Task und Skript nicht neu an (Marker existiert) | |
-| P6 | P1 | `HostRename.Client.Tests.ps1` (PreRun, PostRun) | besteht wie in 1.1.9 | |
+| P6 | P1 | `tests\HostRename.Client.Tests.ps1` (PreRun, PostRun) | besteht wie in 1.1.9 | |
 
 ## T3-F: weitere Namensabhängigkeiten
 

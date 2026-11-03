@@ -29,4 +29,4 @@ Invoke-Pester -Path .\components\tests -Output Detailed
 | `tests/HostRename.Network.Tests.ps1` | Gate: Erkennung von LAN, DirectAccess, WLAN und Domänenerreichbarkeit (gemockt), Entscheidung, Exit-Codes, Ergebniszeile |
 | `tests/HostRename.Certificate.Tests.ps1` | Zertifikatserneuerung: SAN-Auswertung, Vorlagenerkennung, Entscheidungen zu Erneuerung und Entfernen mit gemocktem Speicher und Enrollment |
 
-**Erprobungsstand:** Beide Bausteine sind neu in 1.2.0 und nur mit Mocks getestet. Auf echten Geräten (LAN, DirectAccess, WLAN, AD CS) sind sie noch nicht gelaufen; die Gerätetests stehen in [deployments/acmp/docs/de/testplan.md](../deployments/acmp/docs/de/testplan.md).
+**Erprobungsstand:** Beide Bausteine sind neu in 1.2.0 und nur mit Mocks und in der End-to-End-Simulation des ACMP-Ablaufs getestet (lokal und in der CI unter Windows PowerShell 5.1 und PowerShell 7). Auf echten Geräten (LAN, DirectAccess, WLAN, AD CS) sind sie noch nicht gelaufen; die Gerätetests stehen in [deployments/acmp/docs/de/testplan.md](../deployments/acmp/docs/de/testplan.md).

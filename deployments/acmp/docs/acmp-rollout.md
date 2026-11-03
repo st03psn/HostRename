@@ -268,7 +268,7 @@ Fill in the "Result" column (OK, or deviation with a short note). Verification u
 - a device cannot log on to the domain after the reboot (secure channel broken) or loses DirectAccess for good;
 - WLAN users without a cable are cut off on a large scale even though the certificate renewal is in the flow;
 - ACMP creates duplicates or loses assignments (licenses, inventory) after the rename;
-- a script exit code other than 0, 1, 2, 3, 4, 5, 20–22 or 3010 appears.
+- a script exit code other than 0, 1, 2, 4, 5, 20–22 or 3010 appears.
 
 To stop, deactivate **HostRename – Rename** or remove the assignment. Devices that are already renamed stay renamed. Devices that are renamed but not yet rebooted keep that state: decide whether to reboot them or to rename them back.
 

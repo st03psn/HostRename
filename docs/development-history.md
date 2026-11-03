@@ -58,3 +58,14 @@ The draft `docs/ACMP-Umsetzungsplan.md` identifies the central risk. After a ren
   - Old certificates are only removed with a switch.
   - Device tests are part of the test phases instead of a precondition.
 - Work for 1.2.0 is tracked in [roadmap.md](roadmap.md).
+
+## Phase 5 – Wrapper, simulation, restructure and releases (3 November 2026)
+
+- **Review fixes:** safe disabling of the central log (`''`, blank and non-absolute paths), a hardened ACMP log folder (owner and reparse-point check, protected ACL) and refusal of a 32-bit process on 64-bit Windows.
+- **Rollout documentation:** ACMP rollout process and run verification (ACMP tests AC-A to AC-D), EN + DE.
+- **End-to-end simulation** (`HostRename.Simulation.Tests.ps1`): copies the real scripts flat into a simulated ACMP cache and runs them with the state-check and status snippets taken from the documentation (registry in memory, CIM, AD, network and certificate store mocked). Changed afterwards: permanent errors (2, 4, 5) no longer lead to endless retries (the state check ends with `phase=permanent` until the value `LastExitCode` is removed), and the cleanup events also go to stdout. Under Windows PowerShell 5.1, .NET Framework's X509 `GetNameInfo` returns the subject CN instead of the first SAN DNS name, so the test checks the SAN directly (the scripts parse the SAN themselves and were not affected).
+- **ACMP wrapper** `Invoke-AcmpHostRename.ps1`: runs the whole Client Command flow in one script run per ACMP invocation by calling the unchanged scripts in-process; the Client Command only reacts to 3010 and 20. The simulation covers it with cases W1–W9. A **starter kit** (EN + DE) hands the first ACMP test to a tester who does not know the project; the tester determines the environment values.
+- **Restructure:** core and GPO stay in the root; tests of the core in `tests/`, tool-neutral building blocks in `components/`, everything ACMP in `deployments/acmp/`, cross-cutting documents in `docs/`. The ACMP release package is flat, so the wrapper looks for its scripts in its own folder first and falls back to the repository layout.
+- **Website** (`site/`, EN + DE) published through GitHub Pages.
+- **Releases:** a manual release workflow builds one ZIP per file list (`gpo`, flat `acmp`; legacy single list for v1.1.9). Lesson: the workflow token gets HTTP 403 when it has to create a tag on an older commit, and for v1.1.9 (commit `6605dc8`) even creating the draft release failed. The workflow therefore creates drafts by default, accepts an existing tag that points to the source commit and completes a release the owner published by hand. The owner created the v1.1.9 tag through a helper branch in the web UI. Published: **v1.1.9** (latest full release, pilot-confirmed GPO solution, German) and **v1.2.0** (pre-release, English, GPO and ACMP packages).
+- Still open: the device tests (T3); nothing new in 1.2.0 has run on a real device or in ACMP.

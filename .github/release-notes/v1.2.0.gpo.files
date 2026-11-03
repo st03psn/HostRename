@@ -1,0 +1,11 @@
+# Package HostRename-1.2.0-gpo.zip: core and GPO deployment (paths relative to the repo root; same layout in the package)
+Invoke-HostRename.ps1
+Prepare-HostRename.ps1
+HostRename.Checks.beispiel.psd1
+README.md
+README.de.md
+LICENSE
+SECURITY.md
+tests/HostRename.Local.Tests.ps1
+tests/HostRename.Dc.Tests.ps1
+tests/HostRename.Client.Tests.ps1

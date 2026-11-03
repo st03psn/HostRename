@@ -34,10 +34,10 @@ Diese Werte ermittelst du vor dem ersten Test selbst in deiner Umgebung. Niemand
   .\Prepare-HostRename.ps1 -Action Setup -Component Delegation -OuDN '<OU DN>'
   ```
 
-- [ ] Nur mit zentralem Log: die Freigabe existiert (`-Component Share`, auf dem Dateiserver ausführen; siehe [README](../../README.de.md)).
+- [ ] Nur mit zentralem Log: die Freigabe existiert (`-Component Share`, auf dem Dateiserver ausführen; siehe [README](../../../../README.de.md)).
 - [ ] **Keine HostRename-GPO** mit den Testgeräten verknüpft (GPO und ACMP werden nie auf demselben Gerät verwendet).
 - [ ] 2–3 **dedizierte Testgeräte** in der Test-OU: eines am LAN-Kabel, optional eines über DirectAccess, ein WLAN-Benutzer (nutzt das Firmen-WLAN mit Computerzertifikat). Niemand ist auf ihre Namen angewiesen.
-- [ ] Die Dateien aus dem Repository, unverändert (UTF-8 mit BOM; nicht in einem Editor öffnen und speichern): `Invoke-AcmpHostRename.ps1`, `Invoke-HostRename.ps1`, `Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1`.
+- [ ] Die Dateien aus dem ACMP-Release-Paket `HostRename-<version>-acmp.zip` (alle in einem Ordner), unverändert (UTF-8 mit BOM; nicht in einem Editor öffnen und speichern): `Invoke-AcmpHostRename.ps1`, `Invoke-HostRename.ps1`, `Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1`.
 
 ## 4. Client-Command „HostRename – Rename“ aufbauen
 

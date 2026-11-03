@@ -22,10 +22,11 @@
     Configuration: HostRename.Checks.psd1 (written by Prepare-HostRename.ps1 during Setup).
 
 .PARAMETER ConfigPath
-    Path of the test configuration (default: HostRename.Checks.psd1 next to this file).
+    Path of the test configuration (default: HostRename.Checks.psd1 in the parent folder of this file's folder,
+    i.e. next to Prepare-HostRename.ps1).
 
 .EXAMPLE
-    powershell.exe -NoProfile -Command "Invoke-Pester -Path .\HostRename.Dc.Tests.ps1 -Output Detailed"
+    powershell.exe -NoProfile -Command "Invoke-Pester -Path .\tests\HostRename.Dc.Tests.ps1 -Output Detailed"
 
     Starts the tests in Windows PowerShell 5.1, even if the current session is PowerShell 7.
 
@@ -47,10 +48,10 @@ param(
 
 BeforeAll {
     if ($PSVersionTable.PSEdition -eq 'Core') {
-        throw 'The DC tests need Windows PowerShell 5.1 (the AD: drive and GroupPolicy objects are not reliably available under PowerShell 7). Start with: powershell.exe -NoProfile -Command "Invoke-Pester -Path .\HostRename.Dc.Tests.ps1 -Output Detailed"'
+        throw 'The DC tests need Windows PowerShell 5.1 (the AD: drive and GroupPolicy objects are not reliably available under PowerShell 7). Start with: powershell.exe -NoProfile -Command "Invoke-Pester -Path .\tests\HostRename.Dc.Tests.ps1 -Output Detailed"'
     }
 
-    $ConfigPath = if ($ConfigPath) { $ConfigPath } else { Join-Path $PSScriptRoot 'HostRename.Checks.psd1' }
+    $ConfigPath = if ($ConfigPath) { $ConfigPath } else { Join-Path (Split-Path -Parent $PSScriptRoot) 'HostRename.Checks.psd1' }
     if (-not (Test-Path $ConfigPath)) {
         throw "Configuration '$ConfigPath' is missing. First run .\Prepare-HostRename.ps1 -Action Setup (writes the file from the script's variables) or copy HostRename.Checks.beispiel.psd1 to HostRename.Checks.psd1 and adjust it."
     }

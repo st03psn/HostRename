@@ -1,0 +1,13 @@
+# Package HostRename-1.2.0-acmp.zip: ACMP deployment, FLAT (all scripts in one folder, as ACMP transfers them)
+# source => target (target relative inside the package)
+deployments/acmp/Invoke-AcmpHostRename.ps1 => Invoke-AcmpHostRename.ps1
+Invoke-HostRename.ps1
+components/Test-DeploymentNetwork.ps1 => Test-DeploymentNetwork.ps1
+components/Update-ComputerCertificate.ps1 => Update-ComputerCertificate.ps1
+# Admin PC or DC only: sets the delegation (and the share, if the central log is used); not for ACMP's file repository
+Prepare-HostRename.ps1
+deployments/acmp/README.md => README.md
+deployments/acmp/README.de.md => README.de.md
+deployments/acmp/docs => docs
+LICENSE
+SECURITY.md

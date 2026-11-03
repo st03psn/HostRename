@@ -22,10 +22,11 @@
     DirectAccess, location privacy for the SSID). These need a test on real devices.
 
 .PARAMETER ScriptFolder
-    Folder with the scripts (default: the folder of this test file).
+    Folder with Test-DeploymentNetwork.ps1 (default: the parent folder of the folder of this test file,
+    i.e. components\).
 
 .EXAMPLE
-    Invoke-Pester -Path .\HostRename.Network.Tests.ps1 -Output Detailed
+    Invoke-Pester -Path .\components\tests\HostRename.Network.Tests.ps1 -Output Detailed
 
 .NOTES
     Product          HostRename
@@ -96,7 +97,7 @@ BeforeDiscovery {
 }
 
 BeforeAll {
-    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { $PSScriptRoot }
+    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { Split-Path -Parent $PSScriptRoot }
     $GatePath = Join-Path $ScriptFolder 'Test-DeploymentNetwork.ps1'
 
     # Load all functions of the gate script without running its body (detection and exit)

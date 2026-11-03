@@ -8,12 +8,12 @@ Thanks for your interest in HostRename!
 
 ### Project facts
 
-- All scripts and Pester test files are in the **repository root** (`Invoke-HostRename.ps1`, `Invoke-AcmpHostRename.ps1`, `Prepare-HostRename.ps1`, `Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1`, `HostRename.*.Tests.ps1`); `tools/` holds helper scripts.
+- Layout (see "Repository layout" in `README.md`): core and GPO scripts in the **repository root** (`Invoke-HostRename.ps1`, `Prepare-HostRename.ps1`) with their tests in `tests/`; tool-neutral building blocks in `components/` (`Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1`, tests in `components/tests/`); one folder per deployment tool besides GPO under `deployments/` (ACMP: `deployments/acmp/` with `Invoke-AcmpHostRename.ps1`, `docs/`, `tests/`); cross-cutting documents in `docs/`; helper scripts in `tools/`. Use `git mv` when moving files.
 - Target: **Windows PowerShell 5.1**. PowerShell 7 works in addition, but code must run on 5.1.
 - Files: `.ps1` and `.psd1` are **UTF-8 with BOM** and use **LF** line endings (see `.gitattributes`). CI rejects files without BOM and files with CRLF. Do not let your editor convert line endings.
 - Deployment methods: **GPO** or **ACMP** (alternatives, never both active on the same device).
 - Supported environments: **AD domain-joined clients**. Workgroup is not supported.
-- Documentation: **English is primary**; German versions are kept in sync (`README.de.md`, `docs/de/`).
+- Documentation: **English is primary**; German versions are kept in sync (`README.de.md`, `docs/de/`, `deployments/<tool>/docs/de/`, the `README.de.md` files in the subfolders).
 
 ### Workflow
 
@@ -40,7 +40,7 @@ Get-ChildItem -Recurse -File -Include *.ps1 | ForEach-Object {
 
 # 2. Pester tests that do not need Active Directory
 Import-Module Pester -MinimumVersion 5.3 -Force
-Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1, .\HostRename.Simulation.Tests.ps1 -Output Detailed
+Invoke-Pester -Path .\tests\HostRename.Local.Tests.ps1, .\components\tests, .\deployments\acmp\tests -Output Detailed
 
 # 3. Static analysis (errors must be zero; warnings are accepted)
 Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
@@ -48,7 +48,7 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
 
 CI runs the same checks on `powershell` (5.1) and `pwsh` (7), and additionally checks that `.ps1`/`.psd1` files start with a BOM and contain no CR characters.
 
-**Dc and Client tests** (`HostRename.Dc.Tests.ps1`, `HostRename.Client.Tests.ps1`) need a real AD/GPO environment and the test configuration `HostRename.Checks.psd1`, which `Prepare-HostRename.ps1 -Action Setup` writes. Run them only in a **test domain**, never in production:
+**Dc and Client tests** (`tests/HostRename.Dc.Tests.ps1`, `tests/HostRename.Client.Tests.ps1`) need a real AD/GPO environment and the test configuration `HostRename.Checks.psd1`, which `Prepare-HostRename.ps1 -Action Setup` writes into the repository root. Run them only in a **test domain**, never in production:
 
 ```powershell
 .\Prepare-HostRename.ps1 -Action Setup -WhatIf   # first: show what would be changed
@@ -77,12 +77,12 @@ Danke für dein Interesse an HostRename!
 
 ### Projektfakten
 
-- Alle Skripte und Pester-Testdateien liegen im **Wurzelverzeichnis des Repositorys** (`Invoke-HostRename.ps1`, `Invoke-AcmpHostRename.ps1`, `Prepare-HostRename.ps1`, `Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1`, `HostRename.*.Tests.ps1`); im Ordner `tools/` liegen Hilfsskripte.
+- Aufbau (siehe „Aufbau des Repositorys“ in `README.de.md`): Kern- und GPO-Skripte im **Wurzelverzeichnis des Repositorys** (`Invoke-HostRename.ps1`, `Prepare-HostRename.ps1`) mit ihren Tests in `tests/`; werkzeugneutrale Bausteine in `components/` (`Test-DeploymentNetwork.ps1`, `Update-ComputerCertificate.ps1`, Tests in `components/tests/`); je Verteilwerkzeug neben der GPO ein Ordner unter `deployments/` (ACMP: `deployments/acmp/` mit `Invoke-AcmpHostRename.ps1`, `docs/`, `tests/`); übergreifende Dokumente in `docs/`; Hilfsskripte in `tools/`. Dateien mit `git mv` verschieben.
 - Zielumgebung: **Windows PowerShell 5.1**. PowerShell 7 funktioniert zusätzlich, der Code muss aber unter 5.1 laufen.
 - Dateien: `.ps1` und `.psd1` sind **UTF-8 mit BOM** und verwenden **LF**-Zeilenenden (siehe `.gitattributes`). Die CI lehnt Dateien ohne BOM und Dateien mit CRLF ab. Der Editor darf die Zeilenenden nicht umwandeln.
 - Verteilungsmethoden: **GPO** oder **ACMP** (Alternativen, niemals beide auf demselben Gerät aktiv).
 - Unterstützte Umgebung: **AD-domänenbeigetretene Clients**. Arbeitsgruppen werden nicht unterstützt.
-- Dokumentation: **Englisch ist die Hauptsprache**; die deutschen Fassungen werden mitgepflegt (`README.de.md`, `docs/de/`).
+- Dokumentation: **Englisch ist die Hauptsprache**; die deutschen Fassungen werden mitgepflegt (`README.de.md`, `docs/de/`, `deployments/<werkzeug>/docs/de/`, die `README.de.md` in den Unterordnern).
 
 ### Vorgehen
 
@@ -109,7 +109,7 @@ Get-ChildItem -Recurse -File -Include *.ps1 | ForEach-Object {
 
 # 2. Pester-Tests, die kein Active Directory brauchen
 Import-Module Pester -MinimumVersion 5.3 -Force
-Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1, .\HostRename.Simulation.Tests.ps1 -Output Detailed
+Invoke-Pester -Path .\tests\HostRename.Local.Tests.ps1, .\components\tests, .\deployments\acmp\tests -Output Detailed
 
 # 3. Statische Analyse (Fehler müssen null sein; Warnungen werden akzeptiert)
 Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
@@ -117,7 +117,7 @@ Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
 
 Die CI führt dieselben Prüfungen mit `powershell` (5.1) und `pwsh` (7) aus und prüft zusätzlich, dass `.ps1`/`.psd1`-Dateien mit einem BOM beginnen und keine CR-Zeichen enthalten.
 
-**Dc- und Client-Tests** (`HostRename.Dc.Tests.ps1`, `HostRename.Client.Tests.ps1`) brauchen eine echte AD/GPO-Umgebung und die Testkonfiguration `HostRename.Checks.psd1`, die `Prepare-HostRename.ps1 -Action Setup` schreibt. Nur in einer **Test-Domäne** ausführen, niemals in der Produktion:
+**Dc- und Client-Tests** (`tests/HostRename.Dc.Tests.ps1`, `tests/HostRename.Client.Tests.ps1`) brauchen eine echte AD/GPO-Umgebung und die Testkonfiguration `HostRename.Checks.psd1`, die `Prepare-HostRename.ps1 -Action Setup` ins Wurzelverzeichnis schreibt. Nur in einer **Test-Domäne** ausführen, niemals in der Produktion:
 
 ```powershell
 .\Prepare-HostRename.ps1 -Action Setup -WhatIf   # zuerst: anzeigen, was geändert würde

@@ -14,6 +14,12 @@
       Test-DeploymentNetwork.ps1       network gate
       Update-ComputerCertificate.ps1   certificate renewal (only with -CertificateTemplate)
 
+    SCRIPT LOCATION
+      In the ACMP package (and the ACMP cache on the client) all scripts lie flat in one folder next to this
+      script; that copy always wins. Only if a script is missing there, the repository layout is tried (this
+      script in deployments\acmp\, repository root two levels up): Invoke-HostRename.ps1 in the repository root,
+      Test-DeploymentNetwork.ps1 and Update-ComputerCertificate.ps1 in <repository root>\components\.
+
     FLOW PER RUN
       1. Platform     32-bit process on 64-bit Windows: [ERROR] PLATFORM, exit 1, nothing else runs.
       2. Parameters   exactly one of -NoCentralLog or -CentralLogPath; otherwise exit 1.
@@ -70,7 +76,8 @@
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-AcmpHostRename.ps1 ...
         A 32-bit agent starts %SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe instead.
       - Invoke-HostRename.ps1 and Test-DeploymentNetwork.ps1 (and, with -CertificateTemplate,
-        Update-ComputerCertificate.ps1) in the same folder as this script, unchanged (UTF-8 with BOM).
+        Update-ComputerCertificate.ps1) in the same folder as this script, unchanged (UTF-8 with BOM); see
+        SCRIPT LOCATION for the repository layout.
       - Delegation of the rename rights to SELF on the client OUs (Prepare-HostRename.ps1 -Component Delegation).
 
 .PARAMETER NameTemplate
@@ -203,9 +210,19 @@ function Register-AcmpResult {
 function Invoke-AcmpSubScript {
     # Runs a script from the folder of this script in this process. Its output passes through (and is kept in
     # $script:AcmpOutput); its exit code ends up in $script:AcmpExit (1 if it threw or ended without an exit code).
+    # The flat package (folder of this script) always wins; the repository layout is only a fallback.
     param([Parameter(Mandatory)][string]$AcmpScript, [hashtable]$AcmpParameters = @{})
     $acmpPath = Join-Path $PSScriptRoot $AcmpScript
     $script:AcmpOutput = @()
+    if (-not [System.IO.File]::Exists($acmpPath)) {
+        # Repository layout: deployments\acmp\<this script>; the repository root is two levels up
+        $acmpRepoRoot = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetDirectoryName($PSScriptRoot))
+        if ($acmpRepoRoot) {
+            $acmpRepoPath = if ($AcmpScript -eq 'Invoke-HostRename.ps1') { Join-Path $acmpRepoRoot $AcmpScript }
+                            else { Join-Path (Join-Path $acmpRepoRoot 'components') $AcmpScript }
+            if ([System.IO.File]::Exists($acmpRepoPath)) { $acmpPath = $acmpRepoPath }
+        }
+    }
     if (-not [System.IO.File]::Exists($acmpPath)) {
         throw "$AcmpScript not found in '$PSScriptRoot'. Transfer it together with Invoke-AcmpHostRename.ps1."
     }

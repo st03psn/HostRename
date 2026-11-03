@@ -1,6 +1,6 @@
 # ACMP: Deployment-Prozess und Prüfung eines Laufs
 
-[English version](../acmp-rollout.md) · Bauanleitung: [acmp-anleitung.md](acmp-anleitung.md) · Gerätetests: [testplan.md](testplan.md) · Zeitplan: [roadmap.md](roadmap.md)
+[English version](../acmp-rollout.md) · Bauanleitung: [acmp-anleitung.md](acmp-anleitung.md) · Gerätetests: [testplan.md](testplan.md) · Zeitplan: [roadmap.md](../../../../docs/de/roadmap.md)
 
 Stand: 3. November 2026 · Version 1.2.0
 

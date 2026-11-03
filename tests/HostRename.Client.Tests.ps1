@@ -29,10 +29,11 @@
     Configuration: HostRename.Checks.psd1 (written by Prepare-HostRename.ps1 during setup).
 
 .PARAMETER ConfigPath
-    Path of the test configuration (default: HostRename.Checks.psd1 next to this file).
+    Path of the test configuration (default: HostRename.Checks.psd1 in the parent folder of this file's folder,
+    i.e. next to Prepare-HostRename.ps1).
 
 .PARAMETER ScriptFolder
-    Folder containing Invoke-HostRename.ps1 (default: the folder of this test file).
+    Folder containing Invoke-HostRename.ps1 (default: the parent folder of the folder of this test file).
 
 .PARAMETER Phase
     Auto, PreRun or PostRun (see above; default: Auto).
@@ -45,18 +46,18 @@
     Skips the gpupdate before the test.
 
 .EXAMPLE
-    Invoke-Pester -Path .\HostRename.Client.Tests.ps1 -Output Detailed
+    Invoke-Pester -Path .\tests\HostRename.Client.Tests.ps1 -Output Detailed
 
     Checks the pilot device before the first run (the phase is chosen automatically).
 
 .EXAMPLE
-    $c = New-PesterContainer -Path .\HostRename.Client.Tests.ps1 -Data @{ Phase = 'PostRun' }
+    $c = New-PesterContainer -Path .\tests\HostRename.Client.Tests.ps1 -Data @{ Phase = 'PostRun' }
     Invoke-Pester -Container $c -Output Detailed
 
     Checks the device after rename and reboot.
 
 .EXAMPLE
-    $c = New-PesterContainer -Path .\HostRename.Client.Tests.ps1 -Data @{ RunIltRoundtrip = $true }
+    $c = New-PesterContainer -Path .\tests\HostRename.Client.Tests.ps1 -Data @{ RunIltRoundtrip = $true }
     Invoke-Pester -Container $c -Output Detailed
 
     Roundtrip test for item-level targeting on the pilot device.
@@ -83,8 +84,8 @@ param(
 )
 
 BeforeAll {
-    $ConfigPath   = if ($ConfigPath)   { $ConfigPath }   else { Join-Path $PSScriptRoot 'HostRename.Checks.psd1' }
-    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { $PSScriptRoot }
+    $ConfigPath   = if ($ConfigPath)   { $ConfigPath }   else { Join-Path (Split-Path -Parent $PSScriptRoot) 'HostRename.Checks.psd1' }
+    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { Split-Path -Parent $PSScriptRoot }
     if (-not (Test-Path $ConfigPath)) {
         throw "Configuration '$ConfigPath' is missing. First run .\Prepare-HostRename.ps1 -Action Setup (writes the file from the script's variables) or copy HostRename.Checks.beispiel.psd1 to HostRename.Checks.psd1 and adjust it."
     }

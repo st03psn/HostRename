@@ -4,9 +4,9 @@
 
 .DESCRIPTION
     Runs the real scripts as a whole (Invoke-HostRename.ps1, Test-DeploymentNetwork.ps1,
-    Update-ComputerCertificate.ps1) and the two documented snippets (state check from docs/acmp-guide.md,
-    section 4, step 1, and status script from docs/acmp-rollout.md, section 4.3; both are extracted from the
-    Markdown at test time), chained like the ACMP Client Command in docs/acmp-guide.md, section 4, across all
+    Update-ComputerCertificate.ps1) and the two documented snippets (state check from deployments/acmp/docs/acmp-guide.md,
+    section 4, step 1, and status script from deployments/acmp/docs/acmp-rollout.md, section 4.3; both are extracted from the
+    Markdown at test time), chained like the ACMP Client Command in deployments/acmp/docs/acmp-guide.md, section 4, across all
     phases of a device. The wrapper Invoke-AcmpHostRename.ps1, which implements that Client Command in one
     script run, is run the same way (scenarios W1 to W9).
 
@@ -18,7 +18,7 @@
     command that could change the machine resolves to its mock, and stops otherwise.
 
     This is a simulation: it shows that the scripts and the documented flow fit together. It does not replace the
-    device tests (docs/test-plan.md, docs/acmp-rollout.md section 5): real AD, DNS, ACLs, WinRT, certificate
+    device tests (deployments/acmp/docs/test-plan.md, deployments/acmp/docs/acmp-rollout.md section 5): real AD, DNS, ACLs, WinRT, certificate
     enrollment and ACMP itself are not involved.
 
     SCENARIOS
@@ -51,10 +51,13 @@
       plus structural checks of the wrapper (parses, single exit point, scripts it calls)
 
 .PARAMETER ScriptFolder
-    Folder containing the scripts and docs (default: the folder of this test file).
+    Root folder of the repository (default: three levels above this test file: deployments\acmp\tests\ -> root).
+    The scripts and docs are taken from the repository layout: Invoke-HostRename.ps1 in the root,
+    Test-DeploymentNetwork.ps1 and Update-ComputerCertificate.ps1 in components\, Invoke-AcmpHostRename.ps1 in
+    deployments\acmp\, the guides in deployments\acmp\docs\. They are copied flat into the simulated ACMP cache.
 
 .EXAMPLE
-    Invoke-Pester -Path .\HostRename.Simulation.Tests.ps1 -Output Detailed
+    Invoke-Pester -Path .\deployments\acmp\tests\HostRename.Simulation.Tests.ps1 -Output Detailed
 
 .NOTES
     Product          HostRename
@@ -64,7 +67,7 @@
     Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)
 
 .LINK
-    docs/acmp-guide.md
+    deployments/acmp/docs/acmp-guide.md
 #>
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.3.0' }
 #Requires -Version 5.1
@@ -73,16 +76,16 @@ param(
 )
 
 BeforeAll {
-    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { $PSScriptRoot }
+    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) }
     $script:Src = @{
         Invoke     = Join-Path $ScriptFolder 'Invoke-HostRename.ps1'
-        Gate       = Join-Path $ScriptFolder 'Test-DeploymentNetwork.ps1'
-        Cert       = Join-Path $ScriptFolder 'Update-ComputerCertificate.ps1'
-        Wrapper    = Join-Path $ScriptFolder 'Invoke-AcmpHostRename.ps1'
-        Guide      = Join-Path $ScriptFolder 'docs/acmp-guide.md'
-        Rollout    = Join-Path $ScriptFolder 'docs/acmp-rollout.md'
-        GuideDe    = Join-Path $ScriptFolder 'docs/de/acmp-anleitung.md'
-        RolloutDe  = Join-Path $ScriptFolder 'docs/de/acmp-rollout.md'
+        Gate       = Join-Path $ScriptFolder 'components/Test-DeploymentNetwork.ps1'
+        Cert       = Join-Path $ScriptFolder 'components/Update-ComputerCertificate.ps1'
+        Wrapper    = Join-Path $ScriptFolder 'deployments/acmp/Invoke-AcmpHostRename.ps1'
+        Guide      = Join-Path $ScriptFolder 'deployments/acmp/docs/acmp-guide.md'
+        Rollout    = Join-Path $ScriptFolder 'deployments/acmp/docs/acmp-rollout.md'
+        GuideDe    = Join-Path $ScriptFolder 'deployments/acmp/docs/de/acmp-anleitung.md'
+        RolloutDe  = Join-Path $ScriptFolder 'deployments/acmp/docs/de/acmp-rollout.md'
     }
     $script:ScriptVersion = [regex]::Match([System.IO.File]::ReadAllText($script:Src.Invoke), "(?m)^\`$ScriptVersion\s*=\s*'([^']+)'").Groups[1].Value
 
@@ -206,7 +209,7 @@ BeforeAll {
     function Get-SimState  { Get-SimRegKey 'HKLM:\SOFTWARE\HostRenameState' }
     function Get-SimMarker { Get-SimRegKey 'HKLM:\SOFTWARE\HostRename' }
 
-    # ---- Test certificates (same construction as HostRename.Certificate.Tests.ps1) --------------------------------
+    # ---- Test certificates (same construction as components/tests/HostRename.Certificate.Tests.ps1) --------------------------------
     function New-SimCertificate {
         param([string[]]$DnsName, [string]$TemplateName, [int]$NotAfterDays = 365)
         $key = [System.Security.Cryptography.ECDsa]::Create([System.Security.Cryptography.ECCurve+NamedCurves]::nistP256)
@@ -329,7 +332,7 @@ BeforeAll {
         [pscustomobject]@{ ExitCode = $code; Output = $lines; Text = ($lines -join "`n") }
     }
     function Invoke-SimStatus {
-        # Status script (docs/acmp-rollout.md 4.3); records the phase; must not write anything
+        # Status script (deployments/acmp/docs/acmp-rollout.md 4.3); records the phase; must not write anything
         $writes = $global:HRSim.RegWrites
         $r = Invoke-SimScript -Path $global:HRSim.Paths.Status
         if ($global:HRSim.RegWrites -ne $writes) { throw 'The status script wrote to the registry.' }
@@ -344,7 +347,7 @@ BeforeAll {
 
     function Invoke-SimulatedClientCommand {
         <#
-          The Client Command "HostRename - Rename" as described in docs/acmp-guide.md, section 4:
+          The Client Command "HostRename - Rename" as described in deployments/acmp/docs/acmp-guide.md, section 4:
             1 state check (documented snippet) -> done: end; permanent (LastExitCode 2/4/5): end
             2 gate: 20 dialog "LAN cable", end; 21/22 end silently; 1 end (retry)
             3 rename (phase=rename only), 4 evaluate: 3010 reboot dialog, end; 1 retry; 2/4/5 permanent; 0 continue

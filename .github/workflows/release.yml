@@ -1,11 +1,20 @@
 name: Release
 
-# Started manually (Actions > Release > Run workflow). Builds the release ZIP from the
-# given source ref (default: the commit the workflow runs on), creates the tag v<version>
-# on that commit and the GitHub release with the ZIP attached.
-# Per version, two files must exist in .github/release-notes/ on the branch the workflow runs on:
-#   v<version>.md     release notes
-#   v<version>.files  package contents: one path or glob per line, relative to the repo root
+# Started manually (Actions > Release > Run workflow). Builds the release ZIP(s) from the
+# given source ref (default: the commit the workflow runs on) and creates the GitHub release
+# v<version> with all ZIPs attached, by default as a DRAFT: the workflow token may not create
+# a tag on an older commit (403), so a person publishes the draft (Releases > Edit > Publish),
+# which creates the tag v<version> on the source commit with that person's rights.
+# Per version, these files must exist in .github/release-notes/ on the branch the workflow runs on:
+#   v<version>.md               release notes
+#   v<version>.<package>.files  one file list per package (e.g. v1.2.0.gpo.files, v1.2.0.acmp.files);
+#                               each becomes HostRename-<version>-<package>.zip
+#   or v<version>.files         legacy format (one package, HostRename-<version>.zip), e.g. for v1.1.9
+# File list format, one entry per line ("#" starts a comment):
+#   <source>                    path or glob relative to the repo root; copied to the same relative path
+#   <source> => <target>        path (no glob) copied to <target>, relative inside the package
+#                               (a folder is copied with its contents into <target>)
+# Each ZIP contains one folder with the same name as the ZIP. Any missing source fails the build.
 on:
   workflow_dispatch:
     inputs:
@@ -18,6 +27,10 @@ on:
         default: ''
       prerelease:
         description: 'Mark as pre-release'
+        type: boolean
+        default: true
+      draft:
+        description: 'Create as draft (publish it on GitHub afterwards; creates the tag then)'
         type: boolean
         default: true
 
@@ -39,37 +52,73 @@ jobs:
           path: src
           ref: ${{ inputs.source_ref || github.sha }}
 
-      - name: Check version, release notes and file list
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid version: $VERSION"; exit 1; }
-          grep -q "^\$ScriptVersion = '$VERSION'" src/Invoke-HostRename.ps1 || { echo "\$ScriptVersion in Invoke-HostRename.ps1 of the source ref is not $VERSION"; exit 1; }
-          test -f "meta/.github/release-notes/v$VERSION.md"    || { echo "Missing .github/release-notes/v$VERSION.md"; exit 1; }
-          test -f "meta/.github/release-notes/v$VERSION.files" || { echo "Missing .github/release-notes/v$VERSION.files"; exit 1; }
-          if git -C meta ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then echo "Tag v$VERSION already exists"; exit 1; fi
-          echo "SOURCE_SHA=$(git -C src rev-parse HEAD)" >> "$GITHUB_ENV"
-
-      - name: Build ZIP
+      - name: Check version, release notes and file lists
         env:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           shopt -s nullglob
-          dir="HostRename-$VERSION"
-          mkdir -p "dist/$dir"
-          cd src
-          while IFS= read -r pattern || [ -n "$pattern" ]; do
-            pattern="${pattern%%#*}"; pattern="$(echo "$pattern" | xargs)"
-            [ -z "$pattern" ] && continue
-            matches=( $pattern )
-            [ ${#matches[@]} -gt 0 ] || { echo "No file matches '$pattern'"; exit 1; }
-            for m in "${matches[@]}"; do cp -r --parents "$m" "../dist/$dir/"; done
-          done < "../meta/.github/release-notes/v$VERSION.files"
-          cd ../dist
-          zip -r -X "$dir.zip" "$dir"
-          unzip -l "$dir.zip"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid version: $VERSION"; exit 1; }
+          grep -q "^\$ScriptVersion = '$VERSION'" src/Invoke-HostRename.ps1 || { echo "\$ScriptVersion in Invoke-HostRename.ps1 of the source ref is not $VERSION"; exit 1; }
+          test -f "meta/.github/release-notes/v$VERSION.md" || { echo "Missing .github/release-notes/v$VERSION.md"; exit 1; }
+          lists=( "meta/.github/release-notes/v$VERSION".*.files )
+          legacy="meta/.github/release-notes/v$VERSION.files"
+          if [ -f "$legacy" ] && [ ${#lists[@]} -gt 0 ]; then echo "Both v$VERSION.files and v$VERSION.<package>.files exist; keep one format"; exit 1; fi
+          if [ ! -f "$legacy" ] && [ ${#lists[@]} -eq 0 ]; then echo "Missing .github/release-notes/v$VERSION.<package>.files (or legacy v$VERSION.files)"; exit 1; fi
+          if git -C meta ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then echo "Tag v$VERSION already exists"; exit 1; fi
+          echo "SOURCE_SHA=$(git -C src rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Build ZIPs
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          notes="$PWD/meta/.github/release-notes"
+          dist="$PWD/dist"
+          mkdir -p "$dist"
+          lists=( "$notes/v$VERSION".*.files )
+          [ ${#lists[@]} -gt 0 ] || lists=( "$notes/v$VERSION.files" )
+          safe_rel() { [[ -n "$1" && "$1" != /* && "/$1/" != */../* ]]; }
+          : > "$dist/zips.txt"
+          for list in "${lists[@]}"; do
+            base="$(basename "$list" .files)"            # v1.2.0.acmp or v1.2.0
+            package="${base#"v$VERSION"}"; package="${package#.}"
+            if [ -z "$package" ]; then dir="HostRename-$VERSION"
+            elif [[ "$package" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then dir="HostRename-$VERSION-$package"
+            else echo "Invalid package name '$package' in $(basename "$list")"; exit 1; fi
+            echo "== $dir (from $(basename "$list"))"
+            out="$dist/$dir"
+            mkdir -p "$out"
+            pushd src >/dev/null
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              if [[ "$line" == *"=>"* ]]; then
+                source="$(echo "${line%%=>*}" | xargs)"; target="$(echo "${line#*=>}" | xargs)"
+                safe_rel "$source" && safe_rel "$target" || { echo "Invalid entry '$line' (relative paths without .. only)"; exit 1; }
+                [[ "$source" != *[\*\?\[]* ]] || { echo "Glob not allowed with a target: '$line'"; exit 1; }
+                [ -e "$source" ] || { echo "Missing source '$source'"; exit 1; }
+                if [ -d "$source" ]; then
+                  mkdir -p "$out/$target"; cp -r "$source/." "$out/$target/"
+                else
+                  [ ! -e "$out/$target" ] || { echo "Target '$target' already exists in $dir"; exit 1; }
+                  mkdir -p "$(dirname "$out/$target")"; cp "$source" "$out/$target"
+                fi
+              else
+                safe_rel "$line" || { echo "Invalid entry '$line' (relative paths without .. only)"; exit 1; }
+                matches=( $line )
+                [ ${#matches[@]} -gt 0 ] || { echo "No file matches '$line'"; exit 1; }
+                for m in "${matches[@]}"; do
+                  [ -e "$m" ] || { echo "Missing source '$m'"; exit 1; }
+                  cp -r --parents "$m" "$out/"
+                done
+              fi
+            done < "$list"
+            popd >/dev/null
+            (cd "$dist" && zip -q -r -X "$dir.zip" "$dir" && unzip -l "$dir.zip")
+            echo "dist/$dir.zip" >> "$dist/zips.txt"
+          done
 
       - name: Create release
         env:
@@ -77,11 +126,16 @@ jobs:
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ inputs.version }}
           PRERELEASE: ${{ inputs.prerelease }}
+          DRAFT: ${{ inputs.draft }}
         run: |
           set -euo pipefail
           flags=()
-          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); else flags+=(--latest); fi
-          gh release create "v$VERSION" "dist/HostRename-$VERSION.zip" \
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          if [ "$DRAFT" = "true" ]; then flags+=(--draft)
+          elif [ "$PRERELEASE" != "true" ]; then flags+=(--latest); fi
+          mapfile -t zips < dist/zips.txt
+          [ ${#zips[@]} -gt 0 ] || { echo "No ZIP was built"; exit 1; }
+          gh release create "v$VERSION" "${zips[@]}" \
             --target "$SOURCE_SHA" \
             --title "HostRename $VERSION" \
             --notes-file "meta/.github/release-notes/v$VERSION.md" \

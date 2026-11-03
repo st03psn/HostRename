@@ -3,7 +3,7 @@
     HostRename - tests for the ACMP deployment mode and the optional central log of Invoke-HostRename.ps1.
 
 .DESCRIPTION
-    Loads the relevant functions from Invoke-HostRename.ps1 (via AST, like HostRename.Local.Tests.ps1) and tests
+    Loads the relevant functions from Invoke-HostRename.ps1 (via AST, like tests/HostRename.Local.Tests.ps1) and tests
     them with mocks; needs neither AD nor the real registry and runs on any platform.
 
     CHECKS
@@ -19,10 +19,11 @@
       6. Test-CentralLog: SMB port check per address and address family (mocked)
 
 .PARAMETER ScriptFolder
-    Folder containing Invoke-HostRename.ps1 (default: the folder of this test file).
+    Folder containing Invoke-HostRename.ps1 (default: the repository root, three levels above this test file:
+    deployments\acmp\tests\ -> root).
 
 .EXAMPLE
-    Invoke-Pester -Path .\HostRename.Acmp.Tests.ps1 -Output Detailed
+    Invoke-Pester -Path .\deployments\acmp\tests\HostRename.Acmp.Tests.ps1 -Output Detailed
 
 .NOTES
     Product          HostRename
@@ -41,7 +42,7 @@ param(
 )
 
 BeforeAll {
-    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { $PSScriptRoot }
+    $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) }
     $invokePath   = Join-Path $ScriptFolder 'Invoke-HostRename.ps1'
     $tk = $null; $er = $null
     $invokeAst = [System.Management.Automation.Language.Parser]::ParseFile($invokePath, [ref]$tk, [ref]$er)

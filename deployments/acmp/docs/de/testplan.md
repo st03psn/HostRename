@@ -1,6 +1,6 @@
 # Testplan: Gerätetests für HostRename 1.2.0 (Phasen T3 und T4)
 
-[English version](../test-plan.md) · Hintergrund: [Roadmap](roadmap.md), [ACMP-Anleitung](acmp-anleitung.md), [ACMP-Rollout und Prüfung eines Laufs](acmp-rollout.md) (ACMP-Tests AC-A bis AC-D), [ACMP-Umsetzungsplan](ACMP-Umsetzungsplan.md)
+[English version](../test-plan.md) · Hintergrund: [Roadmap](../../../../docs/de/roadmap.md), [ACMP-Anleitung](acmp-anleitung.md), [ACMP-Rollout und Prüfung eines Laufs](acmp-rollout.md) (ACMP-Tests AC-A bis AC-D), [ACMP-Umsetzungsplan](ACMP-Umsetzungsplan.md)
 
 Stand: 3. November 2026
 

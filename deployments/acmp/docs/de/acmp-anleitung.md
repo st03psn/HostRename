@@ -80,7 +80,7 @@ Diese Dateien ins Dateirepository von ACMP legen (in ACMP prüfen: wo und wie Da
 | `Test-DeploymentNetwork.ps1` | Netzwerk-Gate |
 | `Update-ComputerCertificate.ps1` | Zertifikatserneuerung (nur wenn WLAN-Geräte betroffen sind) |
 
-Die Skripte sind UTF-8 mit BOM. Kodierung beibehalten und im Repository nicht bearbeiten. Das Cleanup im ACMP-Modus löscht nie die Skriptdatei oder ihren Ordner: Die Datei gehört zum Cache von ACMP.
+Alle vier Dateien liegen im ACMP-Release-Paket `HostRename-<version>-acmp.zip` flach in einem Ordner; von dort übernehmen (im Quell-Repository liegen sie in `deployments/acmp/`, im Wurzelverzeichnis und in `components/`). Die Skripte sind UTF-8 mit BOM. Kodierung beibehalten und im Repository nicht bearbeiten. Das Cleanup im ACMP-Modus löscht nie die Skriptdatei oder ihren Ordner: Die Datei gehört zum Cache von ACMP.
 
 ## 3. Parameter je Skript
 

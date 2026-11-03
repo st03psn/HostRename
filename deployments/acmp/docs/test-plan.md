@@ -1,6 +1,6 @@
 # Test plan: device tests for HostRename 1.2.0 (phases T3 and T4)
 
-[Deutsche Version](de/testplan.md) · Background: [roadmap](roadmap.md), [ACMP guide](acmp-guide.md), [ACMP rollout and run verification](acmp-rollout.md) (ACMP-level tests AC-A to AC-D), [ACMP deployment plan](acmp-deployment-plan.md)
+[Deutsche Version](de/testplan.md) · Background: [roadmap](../../../docs/roadmap.md), [ACMP guide](acmp-guide.md), [ACMP rollout and run verification](acmp-rollout.md) (ACMP-level tests AC-A to AC-D), [ACMP deployment plan](acmp-deployment-plan.md)
 
 As of: 3 November 2026
 

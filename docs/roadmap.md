@@ -69,7 +69,8 @@ Results from T3 that require changes (e.g. other exit codes, different detection
 
 Test status of the automated phases:
 
-- **T1 (Linux, PowerShell 7, Pester 5 and 6):** Local 48 passed, 20 failed, 5 skipped. The failures are Windows-only tests that are covered by T2. Network 89 passed, 1 skipped. Certificate 69 passed. Acmp 83 passed.
-- **T2 (GitHub Actions, Windows PowerShell 5.1 and 7):** green, including the Windows-only Local tests.
+- **T1 (Linux, PowerShell 7, Pester 5 and 6):** Local 49 passed, 20 failed, 5 skipped. The failures are Windows-only tests that are covered by T2. Network 89 passed, 1 skipped. Certificate 69 passed. Acmp 83 passed. Simulation 39 passed.
+- **T2 (GitHub Actions, Windows PowerShell 5.1 and 7):** green, including the Windows-only Local tests. The simulation is in the CI run list; its first CI run is still pending.
+- **Simulation (`HostRename.Simulation.Tests.ps1`, part of T1 and T2):** runs the real scripts and the documented state-check and status snippets chained like the ACMP Client Command across all phases (LAN, DirectAccess, WLAN with certificate renewal, waiting at the gate, no delegation, collision, unusable serial number, name already matching, 32-bit process, prepared log folder, GPO regression). The environment is simulated (registry in memory; CIM, AD, network, certificate store and CA mocked); the central log is not simulated. It shows that the scripts and the documented flow fit together; it is no substitute for the device tests in T3.
 
 **Next: T3 device tests by the owner** following [test-plan.md](test-plan.md). Nothing in 1.2.0 has run on a real domain client, DirectAccess, WLAN/AD CS or ACMP yet.

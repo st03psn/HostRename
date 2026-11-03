@@ -22,6 +22,7 @@ Everything deliberately sits in the root directory: scripts and tests find each 
 - `Update-ComputerCertificate.ps1`: certificate renewal (`-Template` mandatory, `-RemoveOld` optional; exit 0/1; summary line; exits 1 while a rename awaits the reboot). Standalone.
 - `HostRename.Dc.Tests.ps1`, `.Client.Tests.ps1`, `.Local.Tests.ps1`: Pester 5.3+. Dc and Client read `HostRename.Checks.psd1`, which setup writes from the variables (in `.gitignore`, never commit). `HostRename.Checks.beispiel.psd1` shows the structure.
 - `HostRename.Network.Tests.ps1`, `.Certificate.Tests.ps1`, `.Acmp.Tests.ps1`: Pester 5.3+, mocks only, no AD needed (run on any platform, also in CI).
+- `HostRename.Simulation.Tests.ps1`: Pester 5.3+, end-to-end simulation of the ACMP Client Command: runs the real scripts as a whole (and the state-check and status snippets extracted from `docs/acmp-guide.md` / `docs/acmp-rollout.md`) in a simulated environment (registry in memory, mocked CIM/AD/network/certificate store); never changes the machine. Not a substitute for the device tests.
 - `tools/Test-GpoReport.ps1`: diagnostics for the GPMC report (see pitfalls). Standalone, not part of the release package.
 - `.gitattributes`: LF in all text files. The `.ps1`/`.psd1` files are **UTF-8 with BOM** (without BOM, Windows PowerShell 5.1 reads them as ANSI). Create new PowerShell files the same way.
 - `LICENSE` (MIT), `SECURITY.md`, issue and PR templates and a CI workflow exist; the CI workflow is yet to be adapted.
@@ -82,7 +83,7 @@ Get-ChildItem -Recurse -Include *.ps1 | ForEach-Object {
     $e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$e)
     if ($e) { "$($_.Name): $($e.Message)" }
 }
-Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1 -Output Detailed   # Pester 5.3+ (Install-Module Pester -MinimumVersion 5.3)
+Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1, .\HostRename.Simulation.Tests.ps1 -Output Detailed   # Pester 5.3+ (Install-Module Pester -MinimumVersion 5.3)
 Invoke-ScriptAnalyzer -Path . -Recurse
 ```
 

@@ -135,12 +135,12 @@ Das Gerät ist **fertig**, wenn der Marker-Schlüssel `HKLM\SOFTWARE\HostRename`
 Beispiel (PowerShell, für eine Bedingung oder einen Skriptschritt; in ACMP prüfen, wie das Ergebnis ausgewertet wird):
 
 ```powershell
-if (Test-Path 'HKLM:\SOFTWARE\HostRename') { exit 0 }   # fertig: Client-Command endet hier
+if (Test-Path 'HKLM:\SOFTWARE\HostRename') { 'phase=done'; exit 0 }   # fertig: Client-Command endet hier
 $t = (Get-ItemProperty 'HKLM:\SOFTWARE\HostRenameState' -ErrorAction SilentlyContinue).TargetName
 if ($t -and $env:COMPUTERNAME -ieq $t) { 'phase=after-reboot' } else { 'phase=rename' }
 ```
 
-Der Namensvergleich ist optional: `Invoke-HostRename.ps1` ist idempotent. Passt der Name schon, liefert es 0 (nichts zu tun) oder, solange ein Neustart aussteht, wieder 3010.
+Das Snippet endet immer mit Exit-Code 0; die Phase steht in seiner Ausgabe (`phase=done`, `phase=after-reboot` oder `phase=rename`). Der Namensvergleich ist optional: `Invoke-HostRename.ps1` ist idempotent. Passt der Name schon, liefert es 0 (nichts zu tun) oder, solange ein Neustart aussteht, wieder 3010.
 
 ### Schritt 2 und 6: Gate
 

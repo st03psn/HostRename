@@ -150,7 +150,7 @@ Check from top to bottom. A run is OK only when all levels that apply agree.
 | waiting for a path | unchanged | – | – | old | gate 20/21/22 | automatic on next run (20: user plugs in the cable) |
 | renamed, reboot pending | 3010 | new | – | old (active), new (pending) | reboot dialog shown | user or deadline reboots |
 | after reboot | 3010 or 0 | new | – | new | gate 0 | certificate (WLAN devices), cleanup |
-| done | 0 | new | exists (`ComputerName` = new) | new | step 1 ends the run | none |
+| done | 0 | new (empty if the name already matched the template) | exists (`ComputerName` = new) | new | step 1 ends the run | none |
 | retry | 1 | maybe | – | maybe | error in the job | automatic on next run; after several failures check the log |
 | permanent | 2, 4 or 5 | – | – | old | error in the job | manual action (see [acmp-guide.md](acmp-guide.md), section 5) |
 
@@ -241,7 +241,7 @@ Fill in the "Result" column (OK, or deviation with a short note). Verification u
 | AC-C3 | Reboot postponed | postpone the reboot dialog up to the deadline | reboot at the latest at the deadline; until then reruns give 3010 (`PENDING_REBOOT`) | L1, L3 | |
 | AC-C4 | Cable unplugged before the reboot | after 3010 unplug the cable, use WLAN | note: does WLAN still work until the reboot (test-plan W1)? After the reboot the device waits at gate 20 until a cable is connected | L1, L3, L6 | |
 | AC-C5 | Device offline after the rename | after 3010 take the device offline for a day | the next run continues with the after-reboot phase; nothing is renamed twice | L1–L3 | |
-| AC-C6 | Central log unreachable (if used) | block the share during the cleanup | `CLEANUP_DEFERRED`, marker not set, the next run completes the cleanup | L1, L3, L5 | |
+| AC-C6 | Central log unreachable (if used) | block the share during the cleanup | exit 0, marker not set; `CLEANUP_DEFERRED` in the local log and as `HR_LastEvent` (cleanup events do not appear in the ACMP output); the next run completes the cleanup | L2, L3, L5 | |
 | AC-C7 | Certificate fails | wrong template name | certificate exit 1, no cleanup, `HR-Retry`; after correcting the name, the next run completes | L1–L3, L6 | |
 | AC-C8 | Protected folder | standard user pre-creates `C:\ProgramData\HostRename` (test-plan R14) | exit 1, `[ERROR] LOCAL_DIR` in the ACMP output; after an admin deletes the folder, the next run works | L1, L3 | |
 | AC-C9 | Two runs at the same time | start Rename twice in quick succession (if ACMP allows it) | no double rename; the second run gives 3010 or ends at step 1 | L1, L3 | |

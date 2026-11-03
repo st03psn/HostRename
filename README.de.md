@@ -29,6 +29,7 @@ HostRename besteht aus zwei Skripten (Preparation und Client), zwei wiederverwen
 | `HostRename.Network.Tests.ps1` | Pester (Mocks): Netzwerk-Gate, Erkennung und Exit-Codes | beliebiger Rechner, kein AD nötig |
 | `HostRename.Certificate.Tests.ps1` | Pester (Mocks): Zertifikatserneuerung | beliebiger Rechner, kein AD und keine CA nötig |
 | `HostRename.Acmp.Tests.ps1` | Pester (Mocks): ACMP-Modus, optionales zentrales Log, Berichtswerte | beliebiger Rechner, kein AD nötig |
+| `HostRename.Simulation.Tests.ps1` | Pester (Simulation): der ACMP-Client-Command von Anfang bis Ende mit den echten Skripten | beliebiger Rechner, kein AD nötig |
 
 Namen im System:
 
@@ -283,13 +284,14 @@ Die Pester-Checks klären, was sich ohne reale Umgebung nicht prüfen ließ. Vor
 | `HostRename.Network.Tests.ps1` | beliebiger Rechner, kein AD nötig | Netzwerk-Gate: Erkennung von LAN, DirectAccess, WLAN und Domänenerreichbarkeit (gemockt), Entscheidung und Exit-Codes, Ergebniszeile |
 | `HostRename.Certificate.Tests.ps1` | beliebiger Rechner, kein AD und keine CA nötig | Zertifikatserneuerung: SAN-Auswertung, Vorlagenerkennung, Entscheidungen zu Erneuerung und Entfernen mit gemocktem Speicher und Enrollment |
 | `HostRename.Acmp.Tests.ps1` | beliebiger Rechner, kein AD nötig | Parameter `-Deployment`, lokaler Ordner je Modus, abgeschaltetes zentrales Log, Cleanup-Entscheidungen je Modus, Berichtswerte |
+| `HostRename.Simulation.Tests.ps1` | beliebiger Rechner, kein AD nötig | Ende-zu-Ende-Simulation des ACMP-Client-Commands: die echten Skripte und die dokumentierten Snippets für Zustandsprüfung und Status, über alle Phasen verkettet (LAN, DirectAccess, WLAN mit Zertifikat, Warten am Gate, dauerhafte Fehler, GPO-Regression) in einer simulierten Umgebung; ändert nichts am Rechner und ersetzt nicht die Gerätetests |
 
 ```powershell
 Invoke-Pester -Path .\HostRename.Dc.Tests.ps1 -Output Detailed
 Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Client.Tests.ps1 -Output Detailed
 
 # AD-freie Tests (Mocks), auch auf einem Entwicklerrechner oder in CI
-Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1 -Output Detailed
+Invoke-Pester -Path .\HostRename.Local.Tests.ps1, .\HostRename.Network.Tests.ps1, .\HostRename.Certificate.Tests.ps1, .\HostRename.Acmp.Tests.ps1, .\HostRename.Simulation.Tests.ps1 -Output Detailed
 
 # nach Umbenennung und Neustart des Piloten
 $c = New-PesterContainer -Path .\HostRename.Client.Tests.ps1 -Data @{ Phase = 'PostRun' }

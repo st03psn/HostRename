@@ -150,7 +150,7 @@ Von oben nach unten prüfen. Ein Lauf ist nur dann in Ordnung, wenn alle zutreff
 | wartet auf einen Weg | unverändert | – | – | alt | Gate 20/21/22 | automatisch beim nächsten Lauf (20: Benutzer steckt das Kabel an) |
 | umbenannt, Neustart ausstehend | 3010 | neu | – | alt (aktiv), neu (ausstehend) | Neustart-Dialog gezeigt | Benutzer oder Frist startet neu |
 | nach dem Neustart | 3010 oder 0 | neu | – | neu | Gate 0 | Zertifikat (WLAN-Geräte), Cleanup |
-| fertig | 0 | neu | vorhanden (`ComputerName` = neu) | neu | Schritt 1 beendet den Lauf | keiner |
+| fertig | 0 | neu (leer, wenn der Name schon zur Vorlage passte) | vorhanden (`ComputerName` = neu) | neu | Schritt 1 beendet den Lauf | keiner |
 | Wiederholung | 1 | evtl. | – | evtl. | Fehler im Job | automatisch beim nächsten Lauf; nach mehreren Fehlschlägen das Log prüfen |
 | dauerhaft | 2, 4 oder 5 | – | – | alt | Fehler im Job | manuelles Eingreifen (siehe [acmp-anleitung.md](acmp-anleitung.md), Abschnitt 5) |
 
@@ -241,7 +241,7 @@ Die Spalte „Ergebnis“ ausfüllen (OK oder Abweichung mit kurzer Notiz). Die 
 | AC-C3 | Neustart verschoben | den Neustart-Dialog bis zur Frist verschieben | Neustart spätestens zur Frist; bis dahin liefern erneute Läufe 3010 (`PENDING_REBOOT`) | L1, L3 | |
 | AC-C4 | Kabel vor dem Neustart gezogen | nach 3010 das Kabel ziehen, WLAN verwenden | notieren: funktioniert WLAN bis zum Neustart noch (Testplan W1)? Nach dem Neustart wartet das Gerät an Gate 20, bis ein Kabel angeschlossen ist | L1, L3, L6 | |
 | AC-C5 | Gerät nach der Umbenennung offline | nach 3010 das Gerät einen Tag offline nehmen | der nächste Lauf macht mit der Phase nach dem Neustart weiter; nichts wird zweimal umbenannt | L1–L3 | |
-| AC-C6 | Zentrales Log nicht erreichbar (falls genutzt) | die Freigabe während des Cleanups sperren | `CLEANUP_DEFERRED`, Marker nicht gesetzt, der nächste Lauf schließt das Cleanup ab | L1, L3, L5 | |
+| AC-C6 | Zentrales Log nicht erreichbar (falls genutzt) | die Freigabe während des Cleanups sperren | Exit 0, Marker nicht gesetzt; `CLEANUP_DEFERRED` im lokalen Log und als `HR_LastEvent` (Cleanup-Ereignisse erscheinen nicht in der ACMP-Ausgabe); der nächste Lauf schließt das Cleanup ab | L2, L3, L5 | |
 | AC-C7 | Zertifikat schlägt fehl | falscher Vorlagenname | Zertifikat Exit 1, kein Cleanup, `HR-Retry`; nach Korrektur des Namens schließt der nächste Lauf ab | L1–L3, L6 | |
 | AC-C8 | Geschützter Ordner | Standardbenutzer legt `C:\ProgramData\HostRename` vorab an (Testplan R14) | Exit 1, `[ERROR] LOCAL_DIR` in der ACMP-Ausgabe; nachdem ein Admin den Ordner gelöscht hat, funktioniert der nächste Lauf | L1, L3 | |
 | AC-C9 | Zwei Läufe gleichzeitig | Umbenennen zweimal kurz hintereinander starten (falls ACMP es erlaubt) | keine doppelte Umbenennung; der zweite Lauf liefert 3010 oder endet bei Schritt 1 | L1, L3 | |

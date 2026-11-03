@@ -89,7 +89,8 @@ jobs:
               'HostRename.Local.Tests.ps1',
               'HostRename.Network.Tests.ps1',
               'HostRename.Certificate.Tests.ps1',
-              'HostRename.Acmp.Tests.ps1'
+              'HostRename.Acmp.Tests.ps1',
+              'HostRename.Simulation.Tests.ps1'
           )
           $config.Run.Exit = $true
           $config.Output.Verbosity = 'Detailed'

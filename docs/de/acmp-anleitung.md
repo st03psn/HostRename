@@ -1,6 +1,6 @@
 # Anleitung: ACMP-Client-Command „HostRename“ aufbauen
 
-[English version](../acmp-guide.md) · Hintergrund: [ACMP-Umsetzungsplan](ACMP-Umsetzungsplan.md) · Tests: [Testplan](testplan.md)
+[English version](../acmp-guide.md) · Hintergrund: [ACMP-Umsetzungsplan](ACMP-Umsetzungsplan.md) · Rollout und Prüfung eines Laufs: [acmp-rollout.md](acmp-rollout.md) · Tests: [Testplan](testplan.md)
 
 Stand: 3. November 2026 · Version 1.2.0
 

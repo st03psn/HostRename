@@ -1,32 +1,32 @@
 ﻿@{
-    # HostRename - Beispiel für die Test-Konfiguration (Version 1.1.9)
+    # HostRename - Example test configuration (Version 1.1.9)
     #
-    # Die echte Datei HostRename.Checks.psd1 schreibt Prepare-HostRename.ps1 (-Action Setup) aus seinen Variablen.
-    # Diese Beispieldatei wird nicht verwendet; sie zeigt nur den Aufbau (zum manuellen Kopieren, falls die Tests
-    # ohne Setup laufen sollen). Die Werte müssen zu Prepare-HostRename.ps1 und der GPO passen.
-    # Kodierung: UTF-8 mit BOM.
+    # The real file HostRename.Checks.psd1 is written by Prepare-HostRename.ps1 (-Action Setup) from its variables.
+    # This example file is not used; it only shows the structure (to copy manually if the tests are to
+    # run without Setup). The values must match Prepare-HostRename.ps1 and the GPO.
+    # Encoding: UTF-8 with BOM.
 
     GpoName           = 'COMP - HostRename'
-    ClientOuDN        = @('OU=Clients,DC=contoso,DC=com')      # mehrere OUs möglich
+    ClientOuDN        = @('OU=Clients,DC=contoso,DC=com')      # multiple OUs possible
     SourceShareFolder = '\\FILESERVER\HostRename$\scripts'
     ScriptName        = 'Invoke-HostRename.ps1'
     LocalFolder       = 'C:\Program Files\HostRename'
     CentralLogPath    = '\\FILESERVER\HostRename$\log\rename-log.csv'
-    NameTemplate      = ''        # leer = Prefix/Suffix verwenden, sonst z. B. 'DE{Serial}'
+    NameTemplate      = ''        # empty = use Prefix/Suffix, otherwise e.g. 'DE{Serial}'
     Prefix            = 'NG-'
     Suffix            = ''
-    NameLike          = 'NG-*'    # Muster für den Namen nach der Umbenennung (bei 'DE{Serial}': 'DE*')
+    NameLike          = 'NG-*'    # Pattern for the name after the rename (for 'DE{Serial}': 'DE*')
     OnTooLong         = 'TruncateEnd'   # TruncateEnd | TruncateStart | Skip
-    OnSerialProblem   = 'GenerateId'    # GenerateId | Skip (nur Vorlagen mit {Serial})
+    OnSerialProblem   = 'GenerateId'    # GenerateId | Skip (templates with {Serial} only)
     FutureIdLength    = 8
-    RegistrationTrigger = $true   # Start sofort nach dem Anlegen (ohne Verzögerung); $false = ohne diesen Trigger
-    RepeatInterval    = ''        # Wiederholung des täglichen Triggers (z. B. 'PT1H'); Standard: leer = ohne
+    RegistrationTrigger = $true   # Start immediately after creation (without delay); $false = without this trigger
+    RepeatInterval    = ''        # Repetition of the daily trigger (e.g. 'PT1H'); default: empty = none
     TaskName          = 'HostRename'
     CleanupGpoName    = 'COMP - HostRename Cleanup'
-    CleanupRegKeys    = @('SOFTWARE\HostRename', 'SOFTWARE\HostRenameState')      # von der Bereinigungs-GPO gelöschte HKLM-Schlüssel
+    CleanupRegKeys    = @('SOFTWARE\HostRename', 'SOFTWARE\HostRenameState')      # HKLM keys deleted by the cleanup GPO
     MarkerRegistryKey = 'SOFTWARE\HostRename'
 
-    ExpectCleanup     = $true     # entspricht $CleanupAfterSuccess
-    ExpectHardening   = $false    # entspricht $HardenLocalFolder
-    PilotGroup        = ''        # Sicherheitsfilter-Gruppe der GPO; leer = nicht prüfen
+    ExpectCleanup     = $true     # corresponds to $CleanupAfterSuccess
+    ExpectHardening   = $false    # corresponds to $HardenLocalFolder
+    PilotGroup        = ''        # Security filter group of the GPO; empty = do not check
 }

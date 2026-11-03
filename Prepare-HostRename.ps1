@@ -685,7 +685,7 @@ $tasksXml = @"
         if ($okFile -and $okTask) { Write-Ok 'Self-test OK: the Files and Scheduled Task preferences are recognized by the GPO.' }
         else { Write-Warning "Self-test: preferences not fully found in the GPO report (Files: $okFile, Task: $okTask). Check the GPO in the GPMC." }
     }
-    catch { Write-Warning "Selbsttest nicht möglich: $($_.Exception.Message)" }
+    catch { Write-Warning "Self-test not possible: $($_.Exception.Message)" }
 }
 
 function Invoke-CleanupGpoSetup {

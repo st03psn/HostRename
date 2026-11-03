@@ -1,6 +1,6 @@
 # ACMP starter kit: first test of HostRename in ACMP
 
-Build guide: [acmp-guide.md](acmp-guide.md) · Rollout and run verification: [acmp-rollout.md](acmp-rollout.md) · Device tests: [test-plan.md](test-plan.md)
+[Deutsche Version](de/acmp-starterkit.md) · Build guide: [acmp-guide.md](acmp-guide.md) · Rollout and run verification: [acmp-rollout.md](acmp-rollout.md) · Device tests: [test-plan.md](test-plan.md)
 
 As of: 3 November 2026 · Version 1.2.0
 

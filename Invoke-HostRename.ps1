@@ -7,6 +7,12 @@
     renames the AD computer object. The script is idempotent: it can run any number of times and renames each
     device only once. With -WhatIf it only shows the target name and changes nothing.
 
+    DEPLOYMENT MODE (-Deployment)
+      Gpo   [default] Scheduled task under SYSTEM, script copy in <Program Files>\HostRename (deployed via GPO).
+      Acmp  Run by the ACMP agent (as SYSTEM, from ACMP's own cache folder). Local logs go to
+            <ProgramData>\HostRename by default, -Reboot is ignored (ACMP controls the reboot; exit code
+            3010 is the signal), and -Cleanup never deletes the script file or its folder.
+
     NAME TEMPLATE
       {Name}          previous host name
       {Serial}        serial number (BIOS, otherwise system product, otherwise baseboard; A-Z and 0-9 only).
@@ -32,6 +38,10 @@
       7. With -Cleanup: deliver log entries to the share, set the registry marker, remove task and script
                       and, once everything has arrived, the local log files together with the empty folder.
                       Until then the cleanup is deferred and made up for on the next run.
+                      With -Deployment Acmp the script file and its folder are kept; the task is removed only if
+                      it exists. Without a central log (-CentralLogPath '') nothing is deferred and the local
+                      log files are kept as the only evidence.
+      8. On every end, the result is written to HKLM:\SOFTWARE\HostRenameState (see REPORTING).
 
     FUTURE ID
       If the serial number is unusable or the target name is already taken in AD, a generated ID replaces the
@@ -44,6 +54,14 @@
       Every event is written to the central CSV log on the share (-CentralLogPath) and to the local log
       (-LocalDir). If the share is unreachable, the entries stay in pending.csv and are delivered on the
       next run; the reason is recorded in the local log as LOG_DELIVERY.
+      The central log is optional: with -CentralLogPath '' only the local log is written.
+
+    REPORTING
+      On every script end (not with -WhatIf) these values are written to HKLM:\SOFTWARE\HostRenameState, e.g.
+      to feed ACMP custom fields: LastRun (yyyy-MM-ddTHH:mm:sszzz), LastExitCode (DWORD), LastEvent (last event
+      code logged), Deployment (Gpo/Acmp), ScriptVersion. They are for reporting only; the script logic never
+      reads them. A failure to write them never changes the exit code. The marker key HKLM:\SOFTWARE\HostRename
+      is not touched by this.
 
     REQUIREMENTS
       - Run as SYSTEM or with administrator rights in 64-bit PowerShell.
@@ -84,7 +102,9 @@
 
 .PARAMETER CentralLogPath
     Full path of the central CSV file on the share. The default value is a placeholder; the GPO passes the
-    real path from Prepare-HostRename.ps1.
+    real path from Prepare-HostRename.ps1. An empty value ('') disables the central log: nothing is written to
+    pending.csv, the share is not checked, and a cleanup is never deferred because of log delivery (the local
+    log files are then kept).
 
 .PARAMETER DomainCredential
     Optional: domain account with permission to rename the AD object. If omitted, the context of the
@@ -92,6 +112,8 @@
 
 .PARAMETER Reboot
     Schedules a reboot with a warning period (-RebootDelaySeconds) after a successful rename.
+    Not used with -Deployment Acmp (ACMP controls the reboot): the switch is ignored and a warning
+    (REBOOT_IGNORED) is logged.
 
 .PARAMETER RebootDelaySeconds
     Warning period for the reboot in seconds (default: 900).
@@ -100,6 +122,8 @@
     After completion, removes the scheduled task (-TaskName), this script, the local log files and the
     empty folder. Intended only for runs via scheduled task; do NOT specify it for manual runs, otherwise
     the script file (e.g. on the share) is deleted.
+    With -Deployment Acmp the script file and its folder are never deleted (they belong to ACMP's cache) and
+    the task is removed only if it exists; the marker is set and the local log files are removed as above.
 
 .PARAMETER TaskName
     Name of the scheduled task that is removed with -Cleanup (default: HostRename).
@@ -108,6 +132,11 @@
     Local folder for rename-local.csv and pending.csv (default: <Program Files>\HostRename). Standard users
     must not create or change anything there, so SYSTEM does not write to a folder that users can
     manipulate. The GPO passes the folder into which it copies the script.
+    With -Deployment Acmp the default is <ProgramData>\HostRename.
+
+.PARAMETER Deployment
+    Deployment method: Gpo (default, scheduled task deployed by GPO) or Acmp (run by the ACMP agent).
+    See DEPLOYMENT MODE above. The mode is logged in the START event and written to the state key.
 
 .EXAMPLE
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Prefix "NG-" -WhatIf
@@ -124,6 +153,12 @@
 
     Preview of a rename by serial number: PC349219 -> DE<serial number>.
 
+.EXAMPLE
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-HostRename.ps1 -Deployment Acmp -NameTemplate "DE{Serial}" -CentralLogPath ''
+
+    ACMP mode without a central log: local logs in C:\ProgramData\HostRename, no reboot is scheduled
+    (ACMP reacts to exit code 3010), the result is available in HKLM:\SOFTWARE\HostRenameState.
+
 .OUTPUTS
     No pipeline output. The exit code describes the result:
       0       nothing to do (name already matches the template) or -WhatIf
@@ -137,7 +172,7 @@
     Product          HostRename
     Version          1.1.9
     Date             2026-10-30
-    Execution        Scheduled task as SYSTEM (deployed via GPO) or manually as administrator
+    Execution        Scheduled task as SYSTEM (deployed via GPO), run by the ACMP agent as SYSTEM, or manually as administrator
     Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)
 
 .LINK
@@ -177,16 +212,26 @@ param(
 
     [string]$TaskName = 'HostRename',
 
-    [string]$LocalDir = ''
+    [string]$LocalDir = '',
+
+    [ValidateSet('Gpo', 'Acmp')]
+    [string]$Deployment = 'Gpo'
 )
 
 $ErrorActionPreference = 'Stop'
 $ScriptVersion = '1.1.9'   # must match the version in .NOTES (checked by HostRename.Local.Tests.ps1)
 $MaxLen     = 15
-if (-not $LocalDir) {
+
+function Resolve-LocalDir {
+    # Local folder for logs: explicit -LocalDir, otherwise per deployment mode (Gpo: Program Files, Acmp: ProgramData).
+    param([string]$Deployment, [string]$LocalDir)
+    if ($LocalDir) { return $LocalDir }
+    if ($Deployment -eq 'Acmp') { return (Join-Path $env:ProgramData 'HostRename') }
     $programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
-    $LocalDir = Join-Path $programFiles 'HostRename'
+    Join-Path $programFiles 'HostRename'
 }
+
+$LocalDir = Resolve-LocalDir -Deployment $Deployment -LocalDir $LocalDir
 $LocalLog   = Join-Path $LocalDir 'rename-local.csv'
 $PendingLog = Join-Path $LocalDir 'pending.csv'
 $CsvHeader  = 'Timestamp;Level;Event;ComputerName;TargetName;Serial;MachineGuid;Message'
@@ -224,6 +269,8 @@ function ConvertTo-CsvField {
 function Send-PendingLog {
     # Appends all lines not yet delivered to the central CSV.
     # Exclusive write access (FileShare.Read) + retry so that parallel devices do not overwrite each other.
+    # No-op if the central log is disabled (-CentralLogPath '').
+    if (-not $CentralLogPath) { return }
     if (-not (Test-Path $PendingLog)) { return }
     $lines = @(Get-Content -Path $PendingLog -Encoding UTF8 | Where-Object { $_ })
     if ($lines.Count -eq 0) { return }
@@ -267,6 +314,7 @@ function Write-RenameLog {
         [string]$Message,
         [switch]$LocalOnly
     )
+    $script:LastEvent = $EventName   # for the reporting values written at exit
     $ts  = Get-Date -Format 'yyyy-MM-ddTHH:mm:sszzz'
     $row = (@($ts, $Level, $EventName, $script:CurrentName, $script:TargetName,
               $script:Serial, $script:MachineGuid, $Message) |
@@ -276,7 +324,7 @@ function Write-RenameLog {
     Add-Content -Path $LocalLog -Value $row -Encoding UTF8
     Write-Output ('{0} [{1}] {2}: {3}' -f $ts, $Level, $EventName, $Message)
 
-    if (-not $LocalOnly) {
+    if (-not $LocalOnly -and $CentralLogPath) {
         Add-Content -Path $PendingLog -Value $row -Encoding UTF8
         Send-PendingLog
     }
@@ -342,15 +390,22 @@ function Test-AdRenamePermission {
 
 # ---- Cleanup --------------------------------------------------------------------
 function Test-LogPending {
+    if (-not $CentralLogPath) { return $false }   # central log disabled: nothing can be pending
     if (-not (Test-Path $PendingLog)) { return $false }
     return (@(Get-Content -Path $PendingLog -Encoding UTF8 | Where-Object { $_ }).Count -gt 0)
 }
 
 function Invoke-Cleanup {
     # Removes the scheduled task, the script, local log files and the (empty) folder.
+    # With -Deployment Acmp the script file and its folder are never removed (they belong to ACMP's cache).
+    # Without a central log the local log files are kept (they are the only evidence) and nothing is deferred.
     # Returns: $true = cleaned up, $false = deferred/failed.
     # Errors here must never affect the result of the rename.
     try {
+        $acmp       = ($Deployment -eq 'Acmp')
+        $centralOn  = [bool]$CentralLogPath
+        $logsNote   = if ($centralOn) { 'Local log files are removed once everything has been delivered.' } else { 'Local log files are kept (central log disabled).' }
+
         # 1) First deliver all log entries to the share - afterwards no task remains that could deliver them later
         Send-PendingLog
         if (Test-LogPending) {
@@ -359,7 +414,10 @@ function Invoke-Cleanup {
         }
 
         # 2) Log the start of the cleanup centrally and make sure the entry has arrived
-        Write-RenameLog -Level INFO -EventName CLEANUP -Message "Removing scheduled task '$TaskName', script and local log files."
+        if ($acmp)          { $msg = "Cleanup (ACMP): setting the completion marker and removing scheduled task '$TaskName' if it exists; the script file is kept. $logsNote" }
+        elseif ($centralOn) { $msg = "Removing scheduled task '$TaskName', script and local log files." }
+        else                { $msg = "Removing scheduled task '$TaskName' and script. $logsNote" }
+        Write-RenameLog -Level INFO -EventName CLEANUP -Message $msg
         if (Test-LogPending) {
             Write-RenameLog -Level WARN -EventName CLEANUP_DEFERRED -Message 'Log entries have not yet arrived on the share - cleanup will be made up for on the next run.' -LocalOnly
             return $false
@@ -371,23 +429,36 @@ function Invoke-Cleanup {
         Set-ItemProperty -Path $MarkerKey -Name 'ComputerName' -Value ([string]$script:TargetName)
 
         # 4) Remove the task first (an orphaned task would be worse than an orphaned file)
+        $taskRemoved = $false
         if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
             Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+            $taskRemoved = $true
         }
 
-        # 5) Remove the script
+        # 5) Remove the script (not in ACMP mode: the file lives in ACMP's cache)
         $scriptDir = $null
-        if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
-            $scriptDir = Split-Path -Path $PSCommandPath -Parent
+        if ($PSCommandPath) { $scriptDir = Split-Path -Path $PSCommandPath -Parent }
+        if (-not $acmp -and $PSCommandPath -and (Test-Path $PSCommandPath)) {
             Remove-Item -Path $PSCommandPath -Force
         }
-        Write-RenameLog -Level INFO -EventName CLEANUP_DONE -Message "Scheduled task '$TaskName' and script were removed."
+        if ($acmp) {
+            $taskText = if ($taskRemoved) { "scheduled task '$TaskName' removed" } else { "no scheduled task '$TaskName' found" }
+            Write-RenameLog -Level INFO -EventName CLEANUP_DONE -Message "Cleanup (ACMP) done: marker set, $taskText, script file kept. $logsNote"
+        }
+        elseif ($centralOn) {
+            Write-RenameLog -Level INFO -EventName CLEANUP_DONE -Message "Scheduled task '$TaskName' and script were removed."
+        }
+        else {
+            Write-RenameLog -Level INFO -EventName CLEANUP_DONE -Message "Scheduled task '$TaskName' and script were removed. $logsNote"
+        }
 
         # 6) Remove local log files and empty folders - but only if everything (including CLEANUP_DONE) has arrived on the share.
-        #    Otherwise the local logs are kept as evidence.
-        if (-not (Test-LogPending)) {
+        #    Otherwise (or without a central log) the local logs are kept as evidence.
+        if ($centralOn -and -not (Test-LogPending)) {
             Remove-Item -Path $LocalLog, $PendingLog -Force -ErrorAction SilentlyContinue
-            foreach ($dir in @($scriptDir, $LocalDir) | Where-Object { $_ } | Select-Object -Unique) {
+            # In ACMP mode never touch the script's folder
+            $dirs = if ($acmp) { @($LocalDir) | Where-Object { $_ -and $_ -ne $scriptDir } } else { @($scriptDir, $LocalDir) }
+            foreach ($dir in $dirs | Where-Object { $_ } | Select-Object -Unique) {
                 if ((Test-Path $dir) -and -not (Get-ChildItem -Path $dir -Force -ErrorAction SilentlyContinue)) {
                     Remove-Item -Path $dir -Force -ErrorAction SilentlyContinue
                 }
@@ -593,6 +664,36 @@ function Set-RenameState {
     Set-ItemProperty -Path $StateKey -Name 'Applied'      -Value (Get-Date -Format 'yyyy-MM-ddTHH:mm:sszzz')
 }
 
+# ---- Reporting and exit -------------------------------------------------------
+function Save-RunState {
+    # Writes the reporting values of this run to the state key (e.g. for ACMP custom fields). Never throws.
+    # Reporting only: nothing in the script reads these values (Get-RenameState uses TargetName/Template only).
+    # Not written with -WhatIf. The marker key $MarkerKey is deliberately not touched.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Reporting helper; WhatIf is handled explicitly (nothing is written).')]
+    param([Parameter(Mandatory)][int]$Code)
+    if ($WhatIfPreference) { return }
+    try {
+        if (-not (Test-Path $StateKey)) { New-Item -Path $StateKey -Force | Out-Null }
+        Set-ItemProperty -Path $StateKey -Name 'LastRun'       -Value (Get-Date -Format 'yyyy-MM-ddTHH:mm:sszzz') -Type String
+        Set-ItemProperty -Path $StateKey -Name 'LastExitCode'  -Value $Code -Type DWord
+        Set-ItemProperty -Path $StateKey -Name 'LastEvent'     -Value ([string]$script:LastEvent) -Type String
+        Set-ItemProperty -Path $StateKey -Name 'Deployment'    -Value $Deployment -Type String
+        Set-ItemProperty -Path $StateKey -Name 'ScriptVersion' -Value $ScriptVersion -Type String
+    }
+    catch {
+        # Must never change the exit code. The local log may be gone (cleanup) - then stay silent.
+        try { Write-RenameLog -Level WARN -EventName STATE -Message "Run state could not be saved: $($_.Exception.Message)" -LocalOnly | Out-Null }
+        catch { Write-Verbose "Run state and its log entry could not be saved: $($_.Exception.Message)" }
+    }
+}
+
+function Exit-HostRename {
+    # Single exit point: records the result (Save-RunState) and ends the script with the given exit code.
+    param([Parameter(Mandatory)][int]$Code)
+    Save-RunState -Code $Code
+    exit $Code
+}
+
 # ---- Main logic ----------------------------------------------------------------
 try {
     $active  = (Get-ItemProperty "$regCN\ActiveComputerName").ComputerName   # currently effective
@@ -603,7 +704,7 @@ try {
     $Template = if ($NameTemplate) { $NameTemplate } elseif ($Prefix -or $Suffix) { '{0}{{Name}}{1}' -f $Prefix, $Suffix } else { '' }
     if (-not $Template) {
         Write-RenameLog -Level ERROR -EventName CONFIG -Message 'Neither -NameTemplate nor -Prefix/-Suffix specified - nothing to do.'
-        exit 1
+        Exit-HostRename -Code 1
     }
     $Template   = $Template.ToUpper()
     $usesName   = $Template -match '\{NAME(:-?\d+)?\}'
@@ -635,25 +736,29 @@ try {
         if ($active -ne $pending) {
             Write-RenameLog -Level WARN -EventName PENDING_REBOOT -Message "Rename to '$pending' is already pending - reboot required."
             if ($Cleanup) { [void](Invoke-Cleanup) }
-            exit 3010
+            Exit-HostRename -Code 3010
         }
         # Log locally only, so the central log is not cluttered on every start
         Write-RenameLog -Level INFO -EventName ALREADY_DONE -Message "Host name already matches template '$Template' - nothing to do." -LocalOnly
         if ($Cleanup) { [void](Invoke-Cleanup) }
-        exit 0
+        Exit-HostRename -Code 0
     }
 
-    Write-RenameLog -Level INFO -EventName START -Message "HostRename ${ScriptVersion}: template '$Template', mode for names that are too long: $OnTooLong"
+    Write-RenameLog -Level INFO -EventName START -Message "HostRename ${ScriptVersion}: deployment $Deployment, template '$Template', mode for names that are too long: $OnTooLong"
+    if ($Reboot -and $Deployment -eq 'Acmp') {
+        Write-RenameLog -Level WARN -EventName REBOOT_IGNORED -Message 'Parameter -Reboot is ignored with -Deployment Acmp (ACMP controls the reboot); exit code 3010 signals that a reboot is required.'
+    }
 
     # 1a) Check the central log. Diagnostics only: the rename also runs without a central log, the entries are then delivered later
     #     and the cleanup waits. The result is only written to the local log, because the central one may be unusable.
-    $logCheck = Test-CentralLog
-    if ($logCheck.Ok) { Write-RenameLog -Level INFO -EventName LOG_CHECK -Message "Central log '$CentralLogPath' is reachable and writable." -LocalOnly }
+    $logCheck = if ($CentralLogPath) { Test-CentralLog } else { $null }
+    if (-not $CentralLogPath) { Write-RenameLog -Level INFO -EventName LOG_CHECK -Message 'Central log is disabled (-CentralLogPath is empty); only the local log is written.' -LocalOnly }
+    elseif ($logCheck.Ok) { Write-RenameLog -Level INFO -EventName LOG_CHECK -Message "Central log '$CentralLogPath' is reachable and writable." -LocalOnly }
     else              { Write-RenameLog -Level WARN -EventName LOG_CHECK -Message "Central log '$CentralLogPath' not usable (stage: $($logCheck.Stage)): $($logCheck.Error). Entries stay in pending.csv and will be delivered later." -LocalOnly }
 
     if ($active -ne $pending) {
         Write-RenameLog -Level ERROR -EventName PRECHECK -Message "Another rename ('$pending') is pending. Please reboot first."
-        exit 1
+        Exit-HostRename -Code 1
     }
 
     # 1b) Check the serial number (only if the template uses it); on problems use a future ID if applicable
@@ -670,7 +775,7 @@ try {
         }
         elseif ($OnSerialProblem -eq 'GenerateId' -and -not $idSeed) {
             Write-RenameLog -Level ERROR -EventName SERIAL_INVALID -Message "No usable serial number ($($serialInfo.Rejected -join '; ')) and no MachineGuid/UUID for a stable ID. Skipped."
-            exit 5
+            Exit-HostRename -Code 5
         }
         elseif ($OnSerialProblem -eq 'GenerateId') {
             $futureId    = New-FutureId -Seed $idSeed -Length $FutureIdLength -Attempt 0
@@ -680,7 +785,7 @@ try {
         }
         else {
             Write-RenameLog -Level ERROR -EventName SERIAL_INVALID -Message "No usable serial number found ($($serialInfo.Rejected -join '; ')). Skipped."
-            exit 5
+            Exit-HostRename -Code 5
         }
     }
 
@@ -688,11 +793,11 @@ try {
     $cs = Get-CimInstance -ClassName Win32_ComputerSystem
     if (-not $cs.PartOfDomain) {
         Write-RenameLog -Level ERROR -EventName PRECHECK -Message 'Device is not a member of a domain.'
-        exit 1
+        Exit-HostRename -Code 1
     }
     if (-not (Test-SecureChannel -Domain $cs.Domain)) {
         Write-RenameLog -Level ERROR -EventName PRECHECK -Message "Secure channel to domain '$($cs.Domain)' is not intact or DC is unreachable."
-        exit 1
+        Exit-HostRename -Code 1
     }
 
     # 2b) Check the permission to rename on the device's own AD object (before anything is changed)
@@ -700,14 +805,14 @@ try {
     $permContext = if ($DomainCredential) { $DomainCredential.UserName } else { 'computer account (SELF)' }
     if (-not $perm.Found) {
         Write-RenameLog -Level ERROR -EventName PERM_CHECK -Message "Computer object '$active`$' was not found in AD - permission check not possible."
-        exit 1
+        Exit-HostRename -Code 1
     }
     elseif ($perm.Inconclusive) {
         Write-RenameLog -Level WARN -EventName PERM_CHECK -Message "Write permissions on '$($perm.Dn)' could not be determined (context: $permContext). Continuing; an error will be logged during the rename."
     }
     elseif ($perm.Missing.Count -gt 0) {
         Write-RenameLog -Level ERROR -EventName PERM_DENIED -Message "No write permissions on: $($perm.Missing -join ', ') on object '$($perm.Dn)' (context: $permContext). Check the delegation (Prepare-HostRename.ps1 -Action Setup -Component Delegation) or use -DomainCredential."
-        exit 4
+        Exit-HostRename -Code 4
     }
     else {
         Write-RenameLog -Level INFO -EventName PERM_CHECK -Message "Permission to rename present on '$($perm.Dn)' (context: $permContext; writable: $($perm.Writable -join ', '))."
@@ -718,7 +823,7 @@ try {
     if (-not $plan.Ok) {
         $script:TargetName = $plan.Full
         Write-RenameLog -Level ERROR -EventName $plan.Code -Message $plan.Error
-        if ($plan.Code -eq 'TOO_LONG') { exit 2 } else { exit 1 }
+        if ($plan.Code -eq 'TOO_LONG') { Exit-HostRename -Code 2 } else { Exit-HostRename -Code 1 }
     }
     $newName = $plan.Name
     $script:TargetName = $newName
@@ -728,7 +833,7 @@ try {
     if ($newName -ieq $active) {
         Write-RenameLog -Level INFO -EventName ALREADY_DONE -Message "Host name '$active' already matches the result of the template - nothing to do." -LocalOnly
         if ($Cleanup) { [void](Invoke-Cleanup) }
-        exit 0
+        Exit-HostRename -Code 0
     }
 
     # 4) Collision check in AD (also applies to shortened names). On a duplicate serial number or colliding ID
@@ -737,7 +842,7 @@ try {
     while (Test-AdComputerExists $newName) {
         if (-not $usesSerial -or $OnSerialProblem -ne 'GenerateId' -or -not $idSeed -or $idAttempt -ge 4) {
             Write-RenameLog -Level ERROR -EventName COLLISION -Message "Computer object '$newName' already exists in AD. Aborting."
-            exit 1
+            Exit-HostRename -Code 1
         }
         $idAttempt++
         $oldName  = $newName
@@ -745,7 +850,7 @@ try {
         $plan     = Resolve-NameTemplate -Template $Template -CurrentName $active -Serial $futureId -MaxLength $MaxLen -OnTooLong $OnTooLong
         if (-not $plan.Ok) {
             Write-RenameLog -Level ERROR -EventName $plan.Code -Message $plan.Error
-            exit 1
+            Exit-HostRename -Code 1
         }
         $newName           = $plan.Name
         $script:TargetName = $newName
@@ -754,7 +859,7 @@ try {
         if ($newName -ieq $active) {
             Write-RenameLog -Level INFO -EventName ALREADY_DONE -Message "Host name '$active' already matches the result of the template (generated ID) - nothing to do." -LocalOnly
             if ($Cleanup) { [void](Invoke-Cleanup) }
-            exit 0
+            Exit-HostRename -Code 0
         }
     }
 
@@ -783,18 +888,18 @@ try {
         }
         catch { Write-RenameLog -Level WARN -EventName AD_VERIFY -Message "AD verification not possible: $($_.Exception.Message)" }
 
-        if ($Reboot) {
+        if ($Reboot -and $Deployment -ne 'Acmp') {
             # Intentionally German: this notification is shown to the German-speaking end users (wording approved by the owner).
             $msg = "Der Computername wird geändert. Das Gerät startet in $([math]::Round($RebootDelaySeconds / 60)) Minuten neu. Bitte Arbeit speichern."
             & shutdown.exe /r /t $RebootDelaySeconds /c $msg /d p:4:1
             Write-RenameLog -Level INFO -EventName REBOOT -Message "Reboot scheduled in $RebootDelaySeconds seconds."
         }
         if ($Cleanup) { [void](Invoke-Cleanup) }
-        exit 3010
+        Exit-HostRename -Code 3010
     }
     else {
         Write-RenameLog -Level INFO -EventName WHATIF -Message "'$active' would be renamed to '$newName' (no changes made)."
-        exit 0
+        Exit-HostRename -Code 0
     }
 }
 catch {
@@ -804,7 +909,7 @@ catch {
         $m += ' | Hint: check the AD permissions (delegation for SELF on the OU, including "Reset password", or -DomainCredential). Details: C:\Windows\debug\NetSetup.LOG'
     }
     Write-RenameLog -Level ERROR -EventName RENAME_FAILED -Message $m
-    exit 1
+    Exit-HostRename -Code 1
 }
 finally {
     Send-PendingLog   # deliver any entries that are still open

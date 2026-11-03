@@ -66,11 +66,17 @@ Results from T3 that require changes (e.g. other exit codes, different detection
 | 10 | done | Version 1.2.0, CI, templates |
 | 11 | done | Independent review. Fixed: unsafe disabling of the central log, user-writable ACMP log folder (now hardened), 32-bit process detection, IPv6 address handling, documentation errors |
 | 12 | done | PR to `main` |
+| 13 | done (added after the original plan) | ACMP rollout process and run verification (`deployments/acmp/docs/acmp-rollout.md`, EN + DE) |
+| 14 | done (added) | End-to-end simulation of the ACMP flow (`HostRename.Simulation.Tests.ps1`, cases S1–S12 and W1–W9) |
+| 15 | done (added) | ACMP wrapper `Invoke-AcmpHostRename.ps1` and starter kit for a first ACMP tester (EN + DE); cleanup events on stdout; permanent errors (2, 4, 5) stop the Client Command until released |
+| 16 | done (added) | Repository restructured: `tests/`, `components/`, `deployments/acmp/`; one release package per deployment method (GPO, flat ACMP) |
+| 17 | done (added) | Release workflow and release notes. Published: v1.1.9 (latest full release, GPO solution from commit `6605dc8`, German) and v1.2.0 (pre-release, packages `gpo` and `acmp`) |
+| 18 | done (added) | Website live at https://st03psn.github.io/HostRename/ (EN + DE), built from `site/` |
 
 Test status of the automated phases:
 
-- **T1 (Linux, PowerShell 7, Pester 5 and 6):** Local 49 passed, 20 failed, 5 skipped. The failures are Windows-only tests that are covered by T2. Network 89 passed, 1 skipped. Certificate 69 passed. Acmp 83 passed. Simulation 39 passed.
-- **T2 (GitHub Actions, Windows PowerShell 5.1 and 7):** green, including the Windows-only Local tests. The simulation is in the CI run list; its first CI run is still pending.
+- **T1 (Linux, PowerShell 7, Pester 5.9; after the restructure):** Local 51 passed, 20 failed, 5 skipped. The failures are Windows-only tests that are covered by T2. Network 89 passed, 1 skipped. Certificate 69 passed. Acmp 83 passed. Simulation 70 passed.
+- **T2 (GitHub Actions, Windows PowerShell 5.1 and 7, Pester 6):** green on `main`, including the Windows-only Local tests and the simulation.
 - **Simulation (`HostRename.Simulation.Tests.ps1`, part of T1 and T2):** runs the real scripts and the documented state-check and status snippets chained like the ACMP Client Command across all phases (LAN, DirectAccess, WLAN with certificate renewal, waiting at the gate, no delegation, collision, unusable serial number, name already matching, 32-bit process, prepared log folder, GPO regression). The environment is simulated (registry in memory; CIM, AD, network, certificate store and CA mocked); the central log is not simulated. It shows that the scripts and the documented flow fit together; it is no substitute for the device tests in T3.
 
-**Next: T3 device tests by the owner** following [test-plan.md](../deployments/acmp/docs/test-plan.md). Nothing in 1.2.0 has run on a real domain client, DirectAccess, WLAN/AD CS or ACMP yet.
+**Next: T3 device tests by the owner** (the device tests decide whether v1.2.0 can become a full release) following [test-plan.md](../deployments/acmp/docs/test-plan.md). Nothing in 1.2.0 has run on a real domain client, DirectAccess, WLAN/AD CS or ACMP yet.

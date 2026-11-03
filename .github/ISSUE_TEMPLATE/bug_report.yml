@@ -43,7 +43,7 @@ body:
     id: version
     attributes:
       label: Script version / Skriptversion
-      description: Version from the `.NOTES` section of the script, e.g. 1.1.9 / Version aus dem Abschnitt `.NOTES`, z. B. 1.1.9
+      description: Version from the `.NOTES` section of the script, e.g. 1.2.0 / Version aus dem Abschnitt `.NOTES`, z. B. 1.2.0
     validations:
       required: true
   - type: dropdown

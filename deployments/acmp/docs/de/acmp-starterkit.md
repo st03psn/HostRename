@@ -10,7 +10,7 @@ Eine Übergabe für Tester, die ACMP haben, aber dieses Projekt noch nie gesehen
 
 HostRename benennt domänenverbundene Windows-Clients nach einer Namensvorlage um (zum Beispiel `DE` + Seriennummer) und benennt zugleich ihr AD-Computerobjekt um; das Gerät erledigt das selbst als SYSTEM, mit einer delegierten Berechtigung auf sein eigenes AD-Objekt (kein Passwort). Unter ACMP führt ein Client-Command immer wieder den Wrapper `Invoke-AcmpHostRename.ps1` aus: Er prüft den Zustand, prüft das Netzwerk (nur LAN-Kabel oder DirectAccess), benennt um, fordert einen Neustart an (Exit-Code 3010), erneuert nach dem Neustart bei entsprechender Konfiguration das WLAN-Zertifikat und markiert das Gerät als fertig. Der Client-Command muss nur vier Skripte übertragen, den Wrapper starten und für zwei Exit-Codes einen Dialog zeigen.
 
-> **Teststand: In ACMP ist noch nichts gelaufen.** Die Skripte wurden nur in einer Simulation mit Mocks getestet (Linux, PowerShell 7). Ihre Tests sind die ersten echten. Die ACMP-Menü- und Befehlsnamen unten sind allgemein gehalten und mit „in ACMP prüfen“ markiert: Bitte die echten Namen notieren.
+> **Teststand: In ACMP ist noch nichts gelaufen.** Die Skripte wurden nur mit Mocks und in einer Simulation getestet (lokal und in der CI unter Windows PowerShell 5.1 und PowerShell 7, ohne AD und ohne ACMP). Ihre Tests sind die ersten echten. Die ACMP-Menü- und Befehlsnamen unten sind allgemein gehalten und mit „in ACMP prüfen“ markiert: Bitte die echten Namen notieren.
 
 ## 2. Werte, die du in deiner Umgebung ermittelst
 

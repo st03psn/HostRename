@@ -14,7 +14,7 @@ Only the latest release receives security fixes.
 
 - **No passwords are stored.** Renaming works through delegation to `NT AUTHORITY\SELF`: each computer account may change only its own AD object, limited to the client OU. The delegation is removable with `Prepare-HostRename.ps1 -Action Remove -Component Delegation`.
 - **No extra administrator group.** HostRename does not add any account to a privileged group.
-- The client task runs as SYSTEM, so the script share must be writable by administrators only. See "Security and known limitations" in `README.md`.
+- The client task runs as SYSTEM, so the script share must be writable by administrators only; with ACMP, the same applies to ACMP's file repository. See "Security and known limitations" in `README.md`.
 
 ## Deutsch
 
@@ -30,4 +30,4 @@ Sicherheitskorrekturen gibt es nur für die jeweils neueste Version.
 
 - **Es werden keine Passwörter gespeichert.** Die Umbenennung funktioniert über die Delegation an `NT AUTHORITY\SELF`: Jedes Computerkonto darf nur sein eigenes AD-Objekt ändern, begrenzt auf die Client-OU. Die Delegation lässt sich mit `Prepare-HostRename.ps1 -Action Remove -Component Delegation` entfernen.
 - **Keine zusätzliche Administratorgruppe.** HostRename nimmt kein Konto in eine privilegierte Gruppe auf.
-- Die Client-Aufgabe läuft als SYSTEM; deshalb darf nur die Administration auf die Skriptfreigabe schreiben. Siehe „Sicherheit und bekannte Einschränkungen“ in `README.de.md`.
+- Die Client-Aufgabe läuft als SYSTEM; deshalb darf nur die Administration auf die Skriptfreigabe schreiben, bei ACMP ebenso auf das Dateirepository von ACMP. Siehe „Sicherheit und bekannte Einschränkungen“ in `README.de.md`.

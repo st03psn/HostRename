@@ -10,7 +10,7 @@ A hand-over for a tester who has ACMP but has never seen this project. It contai
 
 HostRename renames domain-joined Windows clients by a name template (for example `DE` + serial number) and renames their AD computer object at the same time; the device does this itself as SYSTEM, with a delegated permission on its own AD object (no password). Under ACMP, one Client Command runs the wrapper `Invoke-AcmpHostRename.ps1` again and again: it checks the state, checks the network (LAN cable or DirectAccess only), renames, asks for a reboot (exit code 3010), renews the WLAN certificate after the reboot if configured, and marks the device as done. The Client Command only has to transfer four scripts, start the wrapper and show a dialog for two exit codes.
 
-> **Test status: nothing has run in ACMP yet.** The scripts were tested only in a simulation with mocks (Linux, PowerShell 7). Your tests are the first real ones. ACMP menu and command names below are generic and marked "verify in ACMP": please note the real names.
+> **Test status: nothing has run in ACMP yet.** The scripts were tested only with mocks and in a simulation (locally and in CI on Windows PowerShell 5.1 and PowerShell 7, without AD or ACMP). Your tests are the first real ones. ACMP menu and command names below are generic and marked "verify in ACMP": please note the real names.
 
 ## 2. Values you determine in your environment
 

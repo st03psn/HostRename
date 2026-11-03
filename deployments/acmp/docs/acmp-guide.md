@@ -4,7 +4,7 @@
 
 As of: 3 November 2026 · Version 1.2.0
 
-> **Test status:** Everything described here is new in 1.2.0. The scripts were tested only with mocks (Linux, PowerShell 7). Nothing has been confirmed yet on real Windows devices or in ACMP. Which ACMP editor elements exist and how they are named is **not known** here: those places are marked "verify in ACMP". The suggested flow is a starting point to be adjusted during the device tests ([test-plan.md](test-plan.md)).
+> **Test status:** Everything described here is new in 1.2.0. The scripts were tested only with mocks, in an end-to-end simulation and in CI (Windows PowerShell 5.1 and PowerShell 7, without AD or ACMP). Nothing has been confirmed yet on real Windows devices or in ACMP. Which ACMP editor elements exist and how they are named is **not known** here: those places are marked "verify in ACMP". The suggested flow is a starting point to be adjusted during the device tests ([test-plan.md](test-plan.md)).
 
 GPO and ACMP are **alternative** deployment methods. Never run both on the same device: do not link the HostRename GPO for devices that get the Client Command.
 

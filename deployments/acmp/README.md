@@ -48,4 +48,4 @@ Invoke-Pester -Path .\deployments\acmp\tests -Output Detailed
 
 ## Test status
 
-Everything here is new in 1.2.0 and **tested with mocks and in the simulation only** (Linux, PowerShell 7, and CI). Nothing has run on real Windows devices, over DirectAccess, with WLAN/AD CS or in ACMP yet; how ACMP treats exit code 3010 is device test A1. The device tests are in [docs/test-plan.md](docs/test-plan.md).
+Everything here is new in 1.2.0 and **tested with mocks and in the simulation only** (locally and in CI on Windows PowerShell 5.1 and PowerShell 7, without AD or ACMP). Nothing has run on real Windows devices, over DirectAccess, with WLAN/AD CS or in ACMP yet; how ACMP treats exit code 3010 is device test A1. The device tests are in [docs/test-plan.md](docs/test-plan.md).

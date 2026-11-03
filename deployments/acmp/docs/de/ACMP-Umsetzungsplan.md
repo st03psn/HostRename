@@ -1,6 +1,6 @@
 # Umsetzungsplan: HostRename über ACMP verteilen
 
-Stand: 3. November 2026 · Status: Entscheidungen getroffen, Umsetzung läuft (Version 1.2.0)
+Stand: 3. November 2026 · Status: Entscheidungen getroffen, umgesetzt in Version 1.2.0 (Pre-Release); Gerätetests offen
 
 [English version](../acmp-deployment-plan.md)
 
@@ -57,7 +57,7 @@ Das Gate gehört nicht in das Client-Skript, sondern bleibt eigenständig: So l�
 ### 2. Client-Skript im ACMP-Modus (`Invoke-HostRename.ps1`, kleine Änderung)
 
 Die Logik bleibt, ebenso die Exit-Codes (0, 3010, 1, 2, 4, 5). Anzupassen:
-- Bei `-Cleanup` darf das Skript seine eigene Datei nicht löschen, wenn es nicht aus `$LocalFolder` läuft (unter ACMP liegt es in dessen Ablage). Vorschlag: Schalter `-KeepScript` oder Erkennung über den Pfad. Den Task entfernt die Bereinigung ohnehin nur, wenn er existiert.
+- Bei `-Cleanup` darf das Skript seine eigene Datei nicht löschen, wenn es nicht aus `$LocalFolder` läuft (unter ACMP liegt es in dessen Ablage). Vorschlag: Schalter `-KeepScript` oder Erkennung über den Pfad. Den Task entfernt die Bereinigung ohnehin nur, wenn er existiert. (Umgesetzt als `-Deployment Acmp`: Die Bereinigung löscht die Skriptdatei und ihren Ordner nie.)
 - Kein `-Reboot`: Den Neustart steuert ACMP.
 - Lokale Logs über `-LocalDir` an einen festen Ort (im ACMP-Modus `C:\ProgramData\HostRename`; umgesetzt als geschützter Ordner: Prüfung von Besitzer und Analysepunkt, ACL nur SYSTEM und Administratoren, weil Standardbenutzer in ProgramData Ordner anlegen dürfen).
 - Nur 64-Bit-PowerShell (umgesetzt: ein 32-Bit-Prozess auf 64-Bit-Windows endet mit Exit 1, bevor etwas geschrieben wird; ein 32-Bit-Agent ruft `%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe` auf).
@@ -76,7 +76,7 @@ Ob der Schritt nötig ist und welche Vorlage gilt, klärt Phase 0.
 
 ### 4. ACMP Client Command „HostRename“
 
-Ablauf in einem Client Command (Bausteine aus dem Editor: Dateien/File Repository, eigene Skripte, Bedingungen, Ablaufsteuerung, Dialoge):
+Ablauf in einem Client Command (Bausteine aus dem Editor: Dateien/File Repository, eigene Skripte, Bedingungen, Ablaufsteuerung, Dialoge). Umgesetzt in 1.2.0 als Wrapper `Invoke-AcmpHostRename.ps1`, der diesen Ablauf in einem Skriptlauf je ACMP-Aufruf ausführt (siehe [acmp-anleitung.md](acmp-anleitung.md)):
 
 1. Skripte aus dem File Repository auf den Client übertragen.
 2. Zustand lesen: Existiert der Marker-Schlüssel `HKLM\SOFTWARE\HostRename`, ist das Gerät fertig und der Lauf endet. `TargetName` in `HKLM\SOFTWARE\HostRenameState` zeigt, dass die Umbenennung stattgefunden hat. Niemals die bloße Existenz von `HostRenameState` als Kriterium nehmen: Seit 1.2.0 existiert der Schlüssel nach jedem Lauf wegen der Berichtswerte.

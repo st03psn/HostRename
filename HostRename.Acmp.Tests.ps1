@@ -137,10 +137,10 @@ Describe 'Central log disabled (-CentralLogPath empty)' {
 
 Describe 'Invoke-Cleanup' {
     BeforeAll {
-        # Invoke-Cleanup reads $PSCommandPath (in the script: the script's own path; here: a fake script in TestDrive)
+        # Invoke-Cleanup reads $SelfPath (in the script: $PSCommandPath; here: a fake script in TestDrive)
         $scriptDir  = Join-Path $TestDrive 'acmp-cache'
         $scriptFile = Join-Path $scriptDir 'Invoke-HostRename.ps1'
-        $PSCommandPath = $scriptFile
+        $SelfPath   = $scriptFile
         function Invoke-CleanupResult { @(Invoke-Cleanup)[-1] }   # Write-RenameLog output precedes the return value
     }
     BeforeEach {
@@ -289,6 +289,7 @@ Describe 'Reporting values (Save-RunState)' {
     }
     It 'does not throw when writing fails and the local log is gone' {
         Mock Set-ItemProperty { throw 'access denied' }
+        $ErrorActionPreference = 'Stop'   # as in the script
         Remove-Item -Path $LocalDir -Recurse -Force
         { Save-RunState -Code 1 } | Should -Not -Throw
     }

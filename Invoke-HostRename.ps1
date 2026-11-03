@@ -221,6 +221,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $ScriptVersion = '1.1.9'   # must match the version in .NOTES (checked by HostRename.Local.Tests.ps1)
 $MaxLen     = 15
+$SelfPath    = $PSCommandPath   # path of this script (a variable so that tests can substitute it)
 
 function Resolve-LocalDir {
     # Local folder for logs: explicit -LocalDir, otherwise per deployment mode (Gpo: Program Files, Acmp: ProgramData).
@@ -437,9 +438,9 @@ function Invoke-Cleanup {
 
         # 5) Remove the script (not in ACMP mode: the file lives in ACMP's cache)
         $scriptDir = $null
-        if ($PSCommandPath) { $scriptDir = Split-Path -Path $PSCommandPath -Parent }
-        if (-not $acmp -and $PSCommandPath -and (Test-Path $PSCommandPath)) {
-            Remove-Item -Path $PSCommandPath -Force
+        if ($SelfPath) { $scriptDir = Split-Path -Path $SelfPath -Parent }
+        if (-not $acmp -and $SelfPath -and (Test-Path $SelfPath)) {
+            Remove-Item -Path $SelfPath -Force
         }
         if ($acmp) {
             $taskText = if ($taskRemoved) { "scheduled task '$TaskName' removed" } else { "no scheduled task '$TaskName' found" }

@@ -907,12 +907,12 @@ try {
         $script:TargetName = $pending
         if ($active -ne $pending) {
             Write-RenameLog -Level WARN -EventName PENDING_REBOOT -Message "Rename to '$pending' is already pending - reboot required."
-            if ($Cleanup) { [void](Invoke-Cleanup) }
+            if ($Cleanup) { Invoke-Cleanup | Where-Object { $_ -isnot [bool] } }
             Exit-HostRename -Code 3010
         }
         # Log locally only, so the central log is not cluttered on every start
         Write-RenameLog -Level INFO -EventName ALREADY_DONE -Message "Host name already matches template '$Template' - nothing to do." -LocalOnly
-        if ($Cleanup) { [void](Invoke-Cleanup) }
+        if ($Cleanup) { Invoke-Cleanup | Where-Object { $_ -isnot [bool] } }
         Exit-HostRename -Code 0
     }
 
@@ -1001,7 +1001,7 @@ try {
     }
     if ($newName -ieq $active) {
         Write-RenameLog -Level INFO -EventName ALREADY_DONE -Message "Host name '$active' already matches the result of the template - nothing to do." -LocalOnly
-        if ($Cleanup) { [void](Invoke-Cleanup) }
+        if ($Cleanup) { Invoke-Cleanup | Where-Object { $_ -isnot [bool] } }
         Exit-HostRename -Code 0
     }
 
@@ -1027,7 +1027,7 @@ try {
         Write-RenameLog -Level WARN -EventName SERIAL_FALLBACK -Message "Target name '$oldName' already exists in AD (duplicate serial number?) - using generated ID '$futureId' -> '$newName' (attempt $($idAttempt + 1))."
         if ($newName -ieq $active) {
             Write-RenameLog -Level INFO -EventName ALREADY_DONE -Message "Host name '$active' already matches the result of the template (generated ID) - nothing to do." -LocalOnly
-            if ($Cleanup) { [void](Invoke-Cleanup) }
+            if ($Cleanup) { Invoke-Cleanup | Where-Object { $_ -isnot [bool] } }
             Exit-HostRename -Code 0
         }
     }
@@ -1063,7 +1063,7 @@ try {
             & shutdown.exe /r /t $RebootDelaySeconds /c $msg /d p:4:1
             Write-RenameLog -Level INFO -EventName REBOOT -Message "Reboot scheduled in $RebootDelaySeconds seconds."
         }
-        if ($Cleanup) { [void](Invoke-Cleanup) }
+        if ($Cleanup) { Invoke-Cleanup | Where-Object { $_ -isnot [bool] } }
         Exit-HostRename -Code 3010
     }
     else {

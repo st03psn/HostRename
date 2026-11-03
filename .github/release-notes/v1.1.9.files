@@ -1,0 +1,5 @@
+# Package contents for HostRename 1.1.9 (GPO solution, source commit 6605dc8)
+*.ps1
+HostRename.Checks.beispiel.psd1
+README.md
+LICENSE

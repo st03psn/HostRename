@@ -1,0 +1,8 @@
+# Package contents for HostRename 1.2.0 (paths/globs relative to the repo root)
+*.ps1
+HostRename.Checks.beispiel.psd1
+README.md
+README.de.md
+LICENSE
+SECURITY.md
+docs

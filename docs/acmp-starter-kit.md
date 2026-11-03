@@ -12,18 +12,18 @@ HostRename renames domain-joined Windows clients by a name template (for example
 
 > **Test status: nothing has run in ACMP yet.** The scripts were tested only in a simulation with mocks (Linux, PowerShell 7). Your tests are the first real ones. ACMP menu and command names below are generic and marked "verify in ACMP": please note the real names.
 
-## 2. Values to fill in
+## 2. Values you determine in your environment
 
-The owner provides these values before the test. Use them identically in every Client Command.
+You determine these values yourself in your environment before the first test. Nobody fills them in for you in advance. Keep them in your own notes, not in the repository, and use them identically in every Client Command.
 
-| Value | Placeholder | Filled in by owner |
+| Value | Placeholder | How to find it |
 | --- | --- | --- |
-| Name template | `<NameTemplate>` (e.g. `DE{Serial}`) | |
-| Central log | yes / no; if yes: `<UNC path>` (e.g. `\\<Server>\HostRename$\log\rename-log.csv`) | |
-| Corporate WLAN SSID(s) | `<CorporateSsid>` (comma-separated) | |
-| Certificate template name (WLAN devices only; template name, not display name) | `<CertificateTemplate>` | |
-| Test OU | `<OU DN>` | |
-| Test devices | LAN: `<name>` · DirectAccess (optional): `<name>` · WLAN user: `<name>` | |
+| Name template | `<NameTemplate>` | Ask whoever owns the naming convention. For the first test you can use a clearly recognizable test template, e.g. `TST{Serial:-8}` (prefix `TST` plus the last 8 characters of the serial number). A later change of the template renames the test devices again, which is fine. Syntax: README, section "Name templates" |
+| Central log | `-NoCentralLog`, or `-CentralLogPath <UNC path>` | For the first test use `-NoCentralLog`: no share needed, the local log stays on the device. Only use a central log if a share was set up with `Prepare-HostRename.ps1 -Component Share` |
+| Corporate WLAN SSID(s) | `<CorporateSsid>` | On a device connected to the corporate WLAN: `netsh wlan show interfaces` (line "SSID"), or the network name shown in the Windows network list. Several SSIDs comma-separated |
+| Certificate template name (WLAN devices only) | `<CertificateTemplate>` | The template **name**, not the display name. On a device with a WLAN machine certificate: `certutil -store My`, look for "Template=" of the certificate used for the WLAN; or on the CA: `certutil -CATemplates`. If you are unsure, leave the certificate step out of the first test (T-F) |
+| Test OU | `<OU DN>` | The OU that contains the test devices: `([adsisearcher]"(&(objectCategory=computer)(name=$env:COMPUTERNAME))").FindOne().Properties.distinguishedname` on a test device, minus the `CN=<device>,` part. The delegation (section 3) must be set on this OU |
+| Test devices | LAN · DirectAccess (optional) · WLAN user | Dedicated devices that may be renamed; ideally one per path |
 
 ## 3. Prerequisites checklist
 

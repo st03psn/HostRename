@@ -1,24 +1,24 @@
 ﻿<#
 .SYNOPSIS
-    HostRename - lokale Tests: prüft Skripte, Registry, icacls, Selbstlöschung und Namenslogik.
+    HostRename - local tests: checks scripts, registry, icacls, self-deletion and name logic.
 
 .DESCRIPTION
-    Läuft auf jedem Windows-Rechner (DC und Client) als Administrator und braucht kein AD-Objekt.
+    Runs on any Windows machine (DC and client) as administrator and does not need an AD object.
 
-    PRÜFT
-      1. Syntax aller .ps1-Dateien im Skriptordner; einheitliche Versionsangaben (Variable im Client-Skript und .NOTES)
-      2. Sind die CSE-GUIDs für GPP "Files", "Scheduled Tasks" und "Registry" auf diesem System bekannt (gpprefcl.dll)?
-      3. Funktionieren die icacls-Befehle des Tasks (Besitzer und ACL des lokalen Ordners)?
-      4. Kann ein per SYSTEM laufender Scheduled Task sich selbst löschen und danach seine Skriptdatei
-         entfernen (Grundlage von -Cleanup)?
-      5. Namenslogik, aus Invoke-HostRename.ps1 geladen: Namensvorlagen (Platzhalter, Längenangaben, Kürzen,
-         Fehlerfälle), Bewertung von Seriennummern (mit vorgegebenen WMI-Werten) und die generierte
-         Zukunfts-ID (stabil, eindeutig, gültiges Alphabet)
+    CHECKS
+      1. Syntax of all .ps1 files in the script folder; consistent version information (variable in the client script and .NOTES)
+      2. Are the CSE GUIDs for GPP "Files", "Scheduled Tasks" and "Registry" known on this system (gpprefcl.dll)?
+      3. Do the icacls commands of the task work (owner and ACL of the local folder)?
+      4. Can a scheduled task running as SYSTEM delete itself and then remove its own script file
+         (basis of -Cleanup)?
+      5. Name logic, loaded from Invoke-HostRename.ps1: name templates (placeholders, length specifications,
+         shortening, error cases), evaluation of serial numbers (with given WMI values) and the generated
+         future ID (stable, unique, valid alphabet)
 
-    Die Tests legen nur temporäre Objekte unter %ProgramData%\HostRename-Pester-* an und räumen sie wieder auf.
+    The tests only create temporary objects under %ProgramData%\HostRename-Pester-* and clean them up again.
 
 .PARAMETER ScriptFolder
-    Ordner mit den Skripten (Standard: der Ordner dieser Testdatei).
+    Folder containing the scripts (default: the folder of this test file).
 
 .EXAMPLE
     Invoke-Pester -Path .\HostRename.Local.Tests.ps1 -Output Detailed
@@ -26,9 +26,9 @@
 .NOTES
     Produkt          HostRename
     Version          1.1.9
-    Stand            2026-10-30
-    Ausführung       Administrator auf dem DC oder Client (Windows PowerShell 5.1)
-    Kodierung        UTF-8 mit BOM (für die Windows PowerShell 5.1 erforderlich)
+    Date             2026-10-30
+    Execution        Administrator on the DC or client (Windows PowerShell 5.1)
+    Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)
 
 .LINK
     README.md
@@ -47,7 +47,7 @@ BeforeDiscovery {
         @{ Name = 'Preferences: Scheduled Tasks'; Guid = '{AADCED64-746C-4633-A97C-D61349046527}' }
         @{ Name = 'Preferences: Registry';        Guid = '{B087BE9D-ED37-454F-AF9C-04291E351182}' }
     )
-    # Vorlage, Name, Seriennummer, Modus -> erwarteter Zielname bzw. Fehlercode (Maximallänge 15)
+    # Template, name, serial number, mode -> expected target name or error code (maximum length 15)
     $TemplateCases = @(
         @{ Tpl = 'DE{Serial}';           Name = 'PC349219';        Serial = 'PF2ABCDE';             Mode = 'TruncateEnd';   Ok = $true;  Expect = 'DEPF2ABCDE';      Code = '' }
         @{ Tpl = 'NG-{Name}';            Name = 'PC349219';        Serial = 'PF2ABCDE';             Mode = 'TruncateEnd';   Ok = $true;  Expect = 'NG-PC349219';     Code = '' }
@@ -67,20 +67,20 @@ BeforeDiscovery {
         @{ Tpl = '{Serial}';             Name = 'PC349219';        Serial = '123456';               Mode = 'TruncateEnd';   Ok = $false; Expect = '';                Code = 'NAME_INVALID' }
         @{ Tpl = 'ABCDEFGHIJKLMNOP{Serial}'; Name = 'PC1';         Serial = 'XYZ1234';              Mode = 'TruncateEnd';   Ok = $false; Expect = '';                Code = 'TRUNCATE' }
     )
-    # WMI-Werte (BIOS, System-Produkt, Mainboard) -> erwartete Seriennummer und Quelle
+    # WMI values (BIOS, system product, baseboard) -> expected serial number and source
     $SerialCases = @(
-        @{ Label = 'Dell Service Tag im BIOS';                          Bios = 'ABC1234';                Csp = 'X';         Bb = 'Y';    Expect = 'ABC1234';        Source = 'BIOS' }
-        @{ Label = 'Hersteller-Platzhalter im BIOS, System-Produkt ok'; Bios = 'To Be Filled By O.E.M.'; Csp = 'XYZ98765'; Bb = 'B';    Expect = 'XYZ98765';       Source = 'ComputerSystemProduct' }
-        @{ Label = 'VM-Seriennummer mit Leerzeichen und Bindestrichen'; Bios = 'VMware-42 1a 3b 4c';    Csp = '';          Bb = '';     Expect = 'VMWARE421A3B4C'; Source = 'BIOS' }
-        @{ Label = 'alle Quellen unbrauchbar';                          Bios = 'Default string';        Csp = '0';         Bb = 'None'; Expect = '';               Source = '' }
-        @{ Label = 'nur ein wiederholtes Zeichen';                      Bios = '00000000';              Csp = 'FFFFFFFF';  Bb = 'xx';   Expect = '';               Source = '' }
+        @{ Label = 'Dell service tag in BIOS';                          Bios = 'ABC1234';                Csp = 'X';         Bb = 'Y';    Expect = 'ABC1234';        Source = 'BIOS' }
+        @{ Label = 'Manufacturer placeholder in BIOS, system product OK'; Bios = 'To Be Filled By O.E.M.'; Csp = 'XYZ98765'; Bb = 'B';    Expect = 'XYZ98765';       Source = 'ComputerSystemProduct' }
+        @{ Label = 'VM serial number with spaces and hyphens'; Bios = 'VMware-42 1a 3b 4c';    Csp = '';          Bb = '';     Expect = 'VMWARE421A3B4C'; Source = 'BIOS' }
+        @{ Label = 'all sources unusable';                          Bios = 'Default string';        Csp = '0';         Bb = 'None'; Expect = '';               Source = '' }
+        @{ Label = 'only a repeated character';                      Bios = '00000000';              Csp = 'FFFFFFFF';  Bb = 'xx';   Expect = '';               Source = '' }
     )
 }
 
 BeforeAll {
     $ScriptFolder = if ($ScriptFolder) { $ScriptFolder } else { $PSScriptRoot }
 
-    # Funktionen der Namensvorlage aus dem Client-Skript laden (dieselbe Logik wie auf den Clients)
+    # Load the name template functions from the client script (same logic as on the clients)
     $invokePath = Join-Path $ScriptFolder 'Invoke-HostRename.ps1'
     if (Test-Path $invokePath) {
         $tk = $null; $er = $null
@@ -89,7 +89,7 @@ BeforeAll {
         . ([scriptblock]::Create((($fns | ForEach-Object { $_.Extent.Text }) -join "`r`n")))
     }
 
-    # WMI-Werte für die Seriennummer-Tests vorgeben; solange leer, wird die echte Abfrage durchgereicht
+    # Provide WMI values for the serial number tests; while empty, the real query is passed through
     $cim = @{}
     function Get-CimInstance {
         param([string]$ClassName)
@@ -98,52 +98,52 @@ BeforeAll {
     }
 }
 
-Describe 'Voraussetzungen' {
-    It 'läuft mit Administratorrechten' {
+Describe 'Prerequisites' {
+    It 'runs with administrator rights' {
         $id = [Security.Principal.WindowsIdentity]::GetCurrent()
         (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) |
-            Should -BeTrue -Because 'Scheduled Tasks als SYSTEM und icacls /setowner benötigen Administratorrechte'
+            Should -BeTrue -Because 'Scheduled tasks as SYSTEM and icacls /setowner require administrator rights'
     }
 }
 
-Describe 'Versionsangaben' {
-    It 'die Version im Client-Skript ($ScriptVersion, steht im START-Eintrag des Logs) entspricht der Version in den .NOTES aller Skripte' {
-        # [regex]::Match statt $Matches: Should -Match wertet in einem eigenen Gültigkeitsbereich aus, $Matches bliebe leer
+Describe 'Version information' {
+    It 'the version in the client script ($ScriptVersion, appears in the START log entry) matches the version in the .NOTES of all scripts' {
+        # [regex]::Match instead of $Matches: Should -Match evaluates in its own scope, so $Matches would stay empty
         $inv  = Get-Content -Raw -Path (Join-Path $ScriptFolder 'Invoke-HostRename.ps1')
         $ver  = [regex]::Match($inv, "(?m)^\`$ScriptVersion\s*=\s*'([^']+)'")
-        $ver.Success | Should -BeTrue -Because '$ScriptVersion wurde in Invoke-HostRename.ps1 nicht gefunden'
+        $ver.Success | Should -BeTrue -Because '$ScriptVersion was not found in Invoke-HostRename.ps1'
         $code = $ver.Groups[1].Value
         $notes = foreach ($f in Get-ChildItem -Path $ScriptFolder -Filter '*.ps1') {
             $v = [regex]::Match((Get-Content -Raw -Path $f.FullName), '(?m)^\s+Version\s+(\S+)\s*$')
             if ($v.Success) { [pscustomobject]@{ File = $f.Name; Version = $v.Groups[1].Value } }
         }
-        @($notes).Count | Should -BeGreaterThan 0 -Because 'In den .NOTES der Skripte steht keine Version'
+        @($notes).Count | Should -BeGreaterThan 0 -Because 'No version is given in the .NOTES of the scripts'
         $differ = @($notes | Where-Object { $_.Version -ne $code } | ForEach-Object { "$($_.File)=$($_.Version)" })
-        $differ | Should -BeNullOrEmpty -Because "ScriptVersion ist $code; abweichend: $($differ -join ', ')"
+        $differ | Should -BeNullOrEmpty -Because "ScriptVersion is $code; differing: $($differ -join ', ')"
     }
 }
 
 Describe 'Syntax: <Name>' -ForEach $ScriptFiles {
-    It 'lässt sich fehlerfrei parsen' {
+    It 'parses without errors' {
         $tokens = $null; $errors = $null
         [void][System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
-        $msg = ($errors | ForEach-Object { 'Zeile {0}: {1}' -f $_.Extent.StartLineNumber, $_.Message }) -join '; '
+        $msg = ($errors | ForEach-Object { 'Line {0}: {1}' -f $_.Extent.StartLineNumber, $_.Message }) -join '; '
         $errors | Should -BeNullOrEmpty -Because $msg
     }
 }
 
-Describe 'GPP-Client-Side-Extensions auf diesem System' {
-    It '<Name> ist registriert (<Guid>)' -ForEach $CseCases {
+Describe 'GPP client-side extensions on this system' {
+    It '<Name> is registered (<Guid>)' -ForEach $CseCases {
         $key = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\GPExtensions\$Guid"
-        Test-Path $key | Should -BeTrue -Because 'Die GUID in gPCMachineExtensionNames stimmt sonst nicht mit der Windows-Registrierung überein'
+        Test-Path $key | Should -BeTrue -Because 'Otherwise the GUID in gPCMachineExtensionNames does not match the Windows registration'
     }
-    It '<Name> wird von gpprefcl.dll verarbeitet' -ForEach $CseCases {
+    It '<Name> is processed by gpprefcl.dll' -ForEach $CseCases {
         $key = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\GPExtensions\$Guid"
         (Get-ItemProperty -Path $key -ErrorAction Stop).DllName | Should -Match 'gpprefcl\.dll'
     }
 }
 
-Describe 'Ordner-Absicherung per icacls (Befehle aus dem Scheduled Task)' {
+Describe 'Folder hardening via icacls (commands from the scheduled task)' {
     BeforeAll {
         $gpoScript = Join-Path $ScriptFolder 'Prepare-HostRename.ps1'
         $text      = Get-Content -Path $gpoScript -Raw
@@ -170,27 +170,27 @@ Describe 'Ordner-Absicherung per icacls (Befehle aus dem Scheduled Task)' {
         if ($tmp -and (Test-Path $tmp)) { Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue }
     }
 
-    It 'icacls-Befehle konnten aus Prepare-HostRename.ps1 gelesen werden' {
+    It 'icacls commands could be read from Prepare-HostRename.ps1' {
         $fmtOwner | Should -Not -BeNullOrEmpty
         $fmtAcl   | Should -Not -BeNullOrEmpty
     }
-    It '/setowner mit SID-Notation (*S-1-5-32-544) wird akzeptiert' {
+    It '/setowner with SID notation (*S-1-5-32-544) is accepted' {
         $exitOwner | Should -Be 0
     }
-    It '/inheritance:r /grant:r mit SID-Notation wird akzeptiert' {
+    It '/inheritance:r /grant:r with SID notation is accepted' {
         $exitAcl | Should -Be 0
     }
-    It 'Besitzer ist die Gruppe Administratoren' {
+    It 'owner is the Administrators group' {
         $dirAcl.GetOwner([Security.Principal.SecurityIdentifier]).Value | Should -Be 'S-1-5-32-544'
     }
-    It 'Vererbung vom Elternordner ist entfernt' {
+    It 'inheritance from the parent folder is removed' {
         $dirAcl.AreAccessRulesProtected | Should -BeTrue
     }
-    It 'SYSTEM hat Vollzugriff' {
+    It 'SYSTEM has full control' {
         $r = $dirAcl.Access | Where-Object { (& $sid $_) -eq 'S-1-5-18' }
         ($r.FileSystemRights -band $FSR::FullControl) | Should -Be $FSR::FullControl
     }
-    It 'Benutzer (S-1-5-32-545) dürfen lesen, aber nicht schreiben' {
+    It 'users (S-1-5-32-545) may read but not write' {
         $r = @($dirAcl.Access | Where-Object { (& $sid $_) -eq 'S-1-5-32-545' })
         $r.Count | Should -BeGreaterThan 0
         foreach ($rule in $r) {
@@ -198,7 +198,7 @@ Describe 'Ordner-Absicherung per icacls (Befehle aus dem Scheduled Task)' {
             ($rule.FileSystemRights -band $writeMask) | Should -Be 0
         }
     }
-    It 'Die vorhandene Datei im Ordner hat ebenfalls keine Schreibrechte für Benutzer' {
+    It 'the existing file in the folder also has no write permissions for users' {
         $r = @($fileAcl.Access | Where-Object { (& $sid $_) -in @('S-1-5-32-545', 'S-1-5-11', 'S-1-1-0') })
         foreach ($rule in $r) {
             ($rule.FileSystemRights -band $writeMask) | Should -Be 0
@@ -206,7 +206,7 @@ Describe 'Ordner-Absicherung per icacls (Befehle aus dem Scheduled Task)' {
     }
 }
 
-Describe 'Selbstlöschung eines laufenden Scheduled Tasks (Grundlage von -Cleanup)' {
+Describe 'Self-deletion of a running scheduled task (basis of -Cleanup)' {
     BeforeAll {
         $id         = [guid]::NewGuid().ToString('N')
         $dir        = Join-Path $env:ProgramData "HostRename-Pester-$id"
@@ -250,35 +250,35 @@ catch { Add-Content -Path $result -Value ('error: ' + $_.Exception.Message) }
         if ($dir -and (Test-Path $dir)) { Remove-Item -Path $dir -Recurse -Force -ErrorAction SilentlyContinue }
     }
 
-    It 'der Task hat das Skript gestartet und es wurde ausgeführt' {
-        $result.Count | Should -BeGreaterThan 0 -Because 'Der Task hat innerhalb von 60 s nichts geschrieben'
+    It 'the task started the script and it was executed' {
+        $result.Count | Should -BeGreaterThan 0 -Because 'The task wrote nothing within 60 s'
         ($result -join ' | ') | Should -Not -Match 'error:' -Because ($result -join ' | ')
     }
-    It 'Unregister-ScheduledTask aus dem laufenden Task heraus funktioniert' {
+    It 'Unregister-ScheduledTask from within the running task works' {
         $result | Should -Contain 'task-unregistered'
     }
-    It 'das Skript läuft nach dem Löschen des Tasks weiter' {
+    It 'the script keeps running after the task is deleted' {
         $result | Should -Contain 'script-deleted'
     }
-    It 'der Task ist danach nicht mehr vorhanden' {
+    It 'the task no longer exists afterwards' {
         Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
     }
-    It 'die Skriptdatei hat sich selbst gelöscht' {
+    It 'the script file deleted itself' {
         Test-Path $scriptPath | Should -BeFalse
         $result | Should -Contain 'done'
     }
 }
 
-Describe 'Namensvorlagen: Funktionen sind geladen' {
-    It 'Resolve-NameTemplate und Get-DeviceSerial wurden aus Invoke-HostRename.ps1 gelesen' {
+Describe 'Name templates: functions are loaded' {
+    It 'Resolve-NameTemplate and Get-DeviceSerial were read from Invoke-HostRename.ps1' {
         Get-Command Resolve-NameTemplate -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
         Get-Command Get-DeviceSerial     -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
         Get-Command New-FutureId         -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
     }
 }
 
-Describe 'Namensvorlage <Tpl> | Name <Name> | Serial <Serial> | <Mode>' -ForEach $TemplateCases {
-    It 'ergibt das erwartete Ergebnis' {
+Describe 'Name template <Tpl> | Name <Name> | Serial <Serial> | <Mode>' -ForEach $TemplateCases {
+    It 'produces the expected result' {
         $r = Resolve-NameTemplate -Template $Tpl.ToUpper() -CurrentName $Name -Serial $Serial -MaxLength 15 -OnTooLong $Mode
         if ($Ok) {
             $r.Ok   | Should -BeTrue -Because $r.Error
@@ -292,7 +292,7 @@ Describe 'Namensvorlage <Tpl> | Name <Name> | Serial <Serial> | <Mode>' -ForEach
     }
 }
 
-Describe 'Seriennummer-Bewertung (vorgegebene WMI-Werte): <Label>' -ForEach $SerialCases {
+Describe 'Serial number evaluation (given WMI values): <Label>' -ForEach $SerialCases {
     BeforeAll {
         $cim.Clear()
         $cim['Win32_BIOS']                 = @{ SerialNumber = $Bios }
@@ -302,39 +302,39 @@ Describe 'Seriennummer-Bewertung (vorgegebene WMI-Werte): <Label>' -ForEach $Ser
     }
     AfterAll { $cim.Clear() }
 
-    It 'liefert die erwartete Seriennummer' {
+    It 'returns the expected serial number' {
         if ($Expect) { $result.Value | Should -BeExactly $Expect }
         else         { $result.Value | Should -BeNullOrEmpty }
     }
-    It 'nennt die erwartete Quelle' {
+    It 'names the expected source' {
         if ($Source) { $result.Source | Should -Be $Source }
         else         { $result.Source | Should -BeNullOrEmpty }
     }
 }
 
-Describe 'Zukunfts-ID (New-FutureId)' {
-    It 'ist für denselben Startwert stabil (wiederholte Läufe ergeben denselben Namen)' {
+Describe 'Future ID (New-FutureId)' {
+    It 'is stable for the same seed (repeated runs produce the same name)' {
         New-FutureId -Seed 'GUID-1' | Should -BeExactly (New-FutureId -Seed 'GUID-1')
     }
-    It 'liefert beim nächsten Versuch eine andere ID (Kollisionsfall)' {
+    It 'returns a different ID on the next attempt (collision case)' {
         New-FutureId -Seed 'GUID-1' -Attempt 1 | Should -Not -BeExactly (New-FutureId -Seed 'GUID-1' -Attempt 0)
     }
-    It 'liefert für verschiedene Startwerte verschiedene IDs' {
+    It 'returns different IDs for different seeds' {
         $ids = 1..1000 | ForEach-Object { New-FutureId -Seed "seed-$_" }
         @($ids | Select-Object -Unique).Count | Should -Be 1000
     }
-    It 'hat die gewünschte Länge <_>' -ForEach @(4, 8, 12) {
+    It 'has the requested length <_>' -ForEach @(4, 8, 12) {
         (New-FutureId -Seed 'x' -Length $_).Length | Should -Be $_
     }
-    It 'verwendet nur A-Z ohne I und O sowie 2-9' {
+    It 'uses only A-Z without I and O plus 2-9' {
         $bad = 1..500 | ForEach-Object { New-FutureId -Seed "s$_" } | Where-Object { $_ -cnotmatch '^[A-HJ-NP-Z2-9]{8}$' }
         @($bad).Count | Should -Be 0
     }
-    It 'besteht nie nur aus Ziffern (auch bei kurzen IDs)' {
+    It 'never consists of digits only (even for short IDs)' {
         $bad = 1..500 | ForEach-Object { New-FutureId -Seed "s$_" -Length 4 } | Where-Object { $_ -match '^[0-9]+$' }
         @($bad).Count | Should -Be 0
     }
-    It 'ergibt zusammen mit einer Vorlage einen gültigen Namen' {
+    It 'yields a valid name together with a template' {
         $r = Resolve-NameTemplate -Template 'DE{SERIAL}' -CurrentName 'PC349219' -Serial (New-FutureId -Seed 'GUID-1') -MaxLength 15 -OnTooLong 'TruncateEnd'
         $r.Ok | Should -BeTrue -Because $r.Error
         $r.Name | Should -Match '^DE[A-HJ-NP-Z2-9]{8}$'

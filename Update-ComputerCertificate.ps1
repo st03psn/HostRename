@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Requests a new machine certificate from an AD CS template when the existing one does not carry the
     current DNS name of the computer (e.g. after a rename), and optionally removes the outdated ones.
@@ -85,7 +85,7 @@
     Version          1.2.0
     Date             2026-11-03
     Execution        SYSTEM (e.g. ACMP) or manually as administrator, after the restart following a rename
-    Encoding         UTF-8 with BOM (required by Windows PowerShell 5.1)
+    Encoding         UTF-8 with BOM (required for Windows PowerShell 5.1)
 
 .LINK
     docs/ACMP-Umsetzungsplan.md
@@ -104,10 +104,6 @@ param(
     [ValidateRange(0, 3650)]
     [int]$MinValidDays = 30
 )
-
-$OidSan              = '2.5.29.17'
-$OidTemplateName     = '1.3.6.1.4.1.311.20.2'
-$OidTemplateInfo     = '1.3.6.1.4.1.311.21.7'
 
 #region Helpers
 
@@ -277,14 +273,14 @@ function ConvertTo-CertificateInfo {
         foreach ($ext in $Certificate.Extensions) {
             $oid = $ext.Oid.Value
             try {
-                if ($oid -eq $OidSan) {
+                if ($oid -eq '2.5.29.17') {                      # Subject Alternative Name
                     $dnsNames = @(Get-SanDnsName -RawData $ext.RawData)
                     $sanParsed = $true
                 }
-                elseif ($oid -eq $OidTemplateName) {
+                elseif ($oid -eq '1.3.6.1.4.1.311.20.2') {       # template name (v1)
                     $templateName = ConvertFrom-TemplateNameExtension -RawData $ext.RawData
                 }
-                elseif ($oid -eq $OidTemplateInfo) {
+                elseif ($oid -eq '1.3.6.1.4.1.311.21.7') {       # template information (v2+)
                     $templateText = $ext.Format($false)
                     $templateOid = (ConvertFrom-TemplateInfoExtension -RawData $ext.RawData).Oid
                 }
@@ -518,7 +514,7 @@ function Invoke-CertificateUpdate {
     try {
         # 1. Expected name; no request while a rename waits for the restart
         if ($ExpectedDnsName) { $expected = ConvertTo-NormalizedDnsName $ExpectedDnsName }
-        else { $expected = Get-ExpectedDnsName }
+        else { $expected = ConvertTo-NormalizedDnsName (Get-ExpectedDnsName) }
         $result.DnsName = $expected
         Write-Log "Template '$Template', expected DNS name '$expected', MinValidDays $MinValidDays, RemoveOld $([bool]$RemoveOld)."
         $pendingName = Get-PendingComputerName
